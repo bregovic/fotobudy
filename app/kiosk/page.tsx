@@ -2,32 +2,28 @@
 import { useState, useEffect, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 
-// Používáme jednu globální session pro zjednodušení (stačí pro jednu fotobudku)
+// Používáme jednu globální session
 const SESSION_ID = 'main';
 
 export default function KioskPage() {
     const [remoteUrl, setRemoteUrl] = useState('');
-    const [status, setStatus] = useState('Initializing...');
+    const [status, setStatus] = useState<'idle' | 'countdown' | 'capturing' | 'review'>('idle');
+    const [countdown, setCountdown] = useState(3);
     const [lastPhoto, setLastPhoto] = useState<string | null>(null);
     const processingRef = useRef(false);
 
     useEffect(() => {
-        // 1. Nastavit URL pro ovladač (bez parametrů)
         if (typeof window !== 'undefined') {
             const url = new URL(window.location.origin);
             url.pathname = '/remote';
             setRemoteUrl(url.toString());
         }
 
-        // Registrace 'main' session
         fetch('/api/session', {
             method: 'POST',
             body: JSON.stringify({ id: SESSION_ID }),
         }).catch(err => console.error('Session reg failed', err));
 
-        setStatus('Ready');
-
-        // 2. Poll for commands (posloucháme na kanálu 'main')
         const interval = setInterval(async () => {
             if (processingRef.current) return;
 
@@ -37,31 +33,20 @@ export default function KioskPage() {
 
                 if (data.pending && data.command) {
                     processingRef.current = true;
-                    setStatus('📸 Focení...');
 
-                    try {
-                        // 3. Call Local Bridge
-                        const bridgeRes = await fetch('http://localhost:5555/shoot', { method: 'POST' });
-                        const bridgeData = await bridgeRes.json();
+                    // 1. Spustit odpočet
+                    setStatus('countdown');
+                    let count = 3;
+                    setCountdown(count);
 
-                        if (bridgeData.success) {
-                            setLastPhoto(`http://localhost:5555${bridgeData.url}`);
-                            setStatus('Hotovo!');
-
-                            // 4. Mark complete
-                            await fetch('/api/complete', {
-                                method: 'POST',
-                                body: JSON.stringify({ id: data.command.id, filename: bridgeData.filename })
-                            });
-
-                            setTimeout(() => setStatus('Ready (Čekám na příkaz)'), 3000);
+                    const countTimer = setInterval(() => {
+                        count--;
+                        setCountdown(count);
+                        if (count === 0) {
+                            clearInterval(countTimer);
+                            performCapture(data.command.id);
                         }
-                    } catch (e) {
-                        console.error(e);
-                        setStatus('Chyba: Zkontrolujte Bridge aplikaci (localhost:5555)');
-                    } finally {
-                        processingRef.current = false;
-                    }
+                    }, 1000);
                 }
             } catch (e) {
                 console.error('Poll error', e);
@@ -71,38 +56,101 @@ export default function KioskPage() {
         return () => clearInterval(interval);
     }, []);
 
-    return (
-        <div className="container" style={{ textAlign: 'center', paddingTop: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: '100vh', justifyContent: 'flex-start' }}>
+    const performCapture = async (commandId: number) => {
+        setStatus('capturing');
+        try {
+            const bridgeRes = await fetch('http://localhost:5555/shoot', { method: 'POST' });
+            const bridgeData = await bridgeRes.json();
 
-            {/* Hlavní zobrazení */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width: '100%' }}>
-                {lastPhoto ? (
-                    <div className="glass-panel" style={{ padding: '1rem', animation: 'fadeIn 0.5s' }}>
-                        <img src={lastPhoto} alt="Captured" style={{ maxWidth: '100%', maxHeight: '60vh', borderRadius: '12px' }} />
+            if (bridgeData.success) {
+                setLastPhoto(`http://localhost:5555${bridgeData.url}`);
+                setStatus('review');
+
+                await fetch('/api/complete', {
+                    method: 'POST',
+                    body: JSON.stringify({ id: commandId, filename: bridgeData.filename })
+                });
+
+                // Zobrazit fotku na 5 sekund, pak zpět na Live View
+                setTimeout(() => {
+                    setStatus('idle');
+                    processingRef.current = false;
+                }, 5000);
+            }
+        } catch (e) {
+            console.error(e);
+            setStatus('idle');
+            processingRef.current = false;
+            alert('Chyba spojení s kamerou.');
+        }
+    };
+
+    return (
+        <div className="container" style={{ textAlign: 'center', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '1rem' }}>
+
+            {/* Hlavní scéna */}
+            <div style={{ flex: 1, position: 'relative', borderRadius: '24px', overflow: 'hidden', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+
+                {/* 1. LIVE VIEW (DigiCamControl Stream) */}
+                {status === 'idle' || status === 'countdown' ? (
+                    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+                        {/* Live stream z DCC webserveru (nutno zapnout v DCC: File->Settings->Web Server->Port 5513) */}
+                        <img
+                            src="http://localhost:5513/liveview.jpg"
+                            onError={(e) => {
+                                // Fallback pokud nebeží stream
+                                e.currentTarget.style.display = 'none';
+                                e.currentTarget.parentElement!.style.background = '#1e293b'; // Fallback color
+                            }}
+                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                        />
+
+                        {/* Fallback text pokud se nenačte obrázek */}
+                        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 0, color: '#64748b', pointerEvents: 'none' }}>
+                            <p>Live View</p>
+                            <p style={{ fontSize: '0.8rem' }}>(Zapněte v DigiCamControl: File - Settings - Webserver - Port 5513)</p>
+                            <div style={{ marginTop: '2rem' }}>Připojit se:</div>
+                            <div style={{ background: 'white', padding: '1rem', borderRadius: '12px', display: 'inline-block', marginTop: '1rem' }}>
+                                <QRCodeSVG value={remoteUrl} size={150} />
+                            </div>
+                        </div>
                     </div>
-                ) : (
-                    <>
-                        <h2 className="title-gradient" style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>
-                            Připojte se
-                        </h2>
-                        <div className="glass-panel" style={{ padding: '2rem', background: 'white', borderRadius: '24px' }}>
-                            <QRCodeSVG value={remoteUrl} size={300} />
+                ) : null}
+
+                {/* 2. ODPOČET */}
+                {status === 'countdown' && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(5px)', zIndex: 10 }}>
+                        <div style={{ fontSize: '15rem', fontWeight: 900, color: 'white', textShadow: '0 0 50px rgba(59, 130, 246, 0.8)', animation: 'ping 1s infinite' }}>
+                            {countdown}
                         </div>
-                        <div style={{ marginTop: '2rem', fontSize: '1.2rem', color: '#94a3b8' }}>
-                            Naskenujte QR kód nebo jděte na <br />
-                            <b>{remoteUrl ? remoteUrl.replace('https://', '').replace('http://', '') : '...'}</b>
+                    </div>
+                )}
+
+                {/* 3. FLASH EFFECT */}
+                {status === 'capturing' && (
+                    <div style={{ position: 'absolute', inset: 0, background: 'white', animation: 'fadeOut 0.5s forwards', zIndex: 20 }}></div>
+                )}
+
+                {/* 4. VÝSLEDEK (Review) */}
+                {status === 'review' && lastPhoto && (
+                    <div style={{ width: '100%', height: '100%', position: 'relative', background: '#000', zIndex: 5 }}>
+                        <img src={lastPhoto} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        <div style={{ position: 'absolute', bottom: '2rem', left: 0, right: 0, textAlign: 'center' }}>
+                            <span className="glass-panel" style={{ padding: '0.5rem 1.5rem', color: 'white', fontSize: '1.2rem' }}>
+                                🎉 Skvělá fotka!
+                            </span>
                         </div>
-                    </>
+                    </div>
                 )}
             </div>
 
-            {/* Stavový řádek */}
-            <div style={{ padding: '2rem', width: '100%', maxWidth: '800px' }}>
-                <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Status: <b>{status}</b></span>
-                    <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>Bridge připojen</span>
+            {/* Spodní info panel - jen když se nic neděje */}
+            {status === 'idle' && (
+                <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', padding: '0 1rem', color: '#64748b', fontSize: '0.9rem' }}>
+                    <span>🔗 {remoteUrl.replace('https://', '').replace('http://', '')}</span>
+                    <span>📷 Canon 5D Mark II</span>
                 </div>
-            </div>
+            )}
         </div>
     );
 }
