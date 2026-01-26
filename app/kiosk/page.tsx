@@ -2,36 +2,37 @@
 import { useState, useEffect, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 
+// Používáme jednu globální session pro zjednodušení (stačí pro jednu fotobudku)
+const SESSION_ID = 'main';
+
 export default function KioskPage() {
-    const [sessionId, setSessionId] = useState('');
     const [remoteUrl, setRemoteUrl] = useState('');
     const [status, setStatus] = useState('Initializing...');
     const [lastPhoto, setLastPhoto] = useState<string | null>(null);
     const processingRef = useRef(false);
 
     useEffect(() => {
-        // 1. Generate ID and Register
-        const id = Math.random().toString(36).substring(2, 7).toUpperCase();
-        setSessionId(id);
-
-        // Check if we are client side before using window
+        // 1. Nastavit URL pro ovladač (bez parametrů)
         if (typeof window !== 'undefined') {
-            setRemoteUrl(`${window.location.origin}/remote?session=${id}`);
+            const url = new URL(window.location.origin);
+            url.pathname = '/remote';
+            setRemoteUrl(url.toString());
         }
 
+        // Registrace 'main' session
         fetch('/api/session', {
             method: 'POST',
-            body: JSON.stringify({ id }),
+            body: JSON.stringify({ id: SESSION_ID }),
         }).catch(err => console.error('Session reg failed', err));
 
         setStatus('Ready');
 
-        // 2. Poll for commands
+        // 2. Poll for commands (posloucháme na kanálu 'main')
         const interval = setInterval(async () => {
             if (processingRef.current) return;
 
             try {
-                const res = await fetch(`/api/poll?sessionId=${id}`);
+                const res = await fetch(`/api/poll?sessionId=${SESSION_ID}`);
                 const data = await res.json();
 
                 if (data.pending && data.command) {
@@ -53,11 +54,11 @@ export default function KioskPage() {
                                 body: JSON.stringify({ id: data.command.id, filename: bridgeData.filename })
                             });
 
-                            setTimeout(() => setStatus('Ready (Waiting for command)'), 3000);
+                            setTimeout(() => setStatus('Ready (Čekám na příkaz)'), 3000);
                         }
                     } catch (e) {
                         console.error(e);
-                        setStatus('Error: Check Bridge (localhost:5555)');
+                        setStatus('Chyba: Zkontrolujte Bridge aplikaci (localhost:5555)');
                     } finally {
                         processingRef.current = false;
                     }
@@ -69,8 +70,6 @@ export default function KioskPage() {
 
         return () => clearInterval(interval);
     }, []);
-
-    if (!sessionId) return <div className="container" style={{ textAlign: 'center', marginTop: '20%' }}>Načítání systému...</div>;
 
     return (
         <div className="container" style={{ textAlign: 'center', paddingTop: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: '100vh', justifyContent: 'flex-start' }}>
@@ -89,8 +88,9 @@ export default function KioskPage() {
                         <div className="glass-panel" style={{ padding: '2rem', background: 'white', borderRadius: '24px' }}>
                             <QRCodeSVG value={remoteUrl} size={300} />
                         </div>
-                        <div style={{ marginTop: '2rem', fontSize: '1.5rem', fontFamily: 'monospace' }}>
-                            Kód: <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>{sessionId}</span>
+                        <div style={{ marginTop: '2rem', fontSize: '1.2rem', color: '#94a3b8' }}>
+                            Naskenujte QR kód nebo jděte na <br />
+                            <b>{remoteUrl ? remoteUrl.replace('https://', '').replace('http://', '') : '...'}</b>
                         </div>
                     </>
                 )}
@@ -100,7 +100,7 @@ export default function KioskPage() {
             <div style={{ padding: '2rem', width: '100%', maxWidth: '800px' }}>
                 <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span>Status: <b>{status}</b></span>
-                    <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>Bridge: http://localhost:5555</span>
+                    <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>Bridge připojen</span>
                 </div>
             </div>
         </div>

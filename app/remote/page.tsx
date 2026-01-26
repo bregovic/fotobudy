@@ -2,9 +2,12 @@
 import { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
+const SESSION_ID = 'main'; // Globální session pro zjednodušení
+
 function RemoteContent() {
     const searchParams = useSearchParams();
-    const sessionId = searchParams.get('session');
+    // Použijeme parametr session, pokud existuje (pro zpětnou kompatibilitu), jinak 'main'
+    const sessionId = searchParams.get('session') || SESSION_ID;
     const [counting, setCounting] = useState(false);
     const [count, setCount] = useState(3);
     const [error, setError] = useState('');
@@ -26,10 +29,7 @@ function RemoteContent() {
             });
         }, 1000);
 
-        // Wait for countdown to finish before sending trigger?
-        // Or send trigger immediately and let kiosk do countdown?
-        // Logic: User sees 3..2..1.. then Request is sent.
-
+        // Wait for countdown to finish
         setTimeout(async () => {
             setCounting(false); // Reset UI
             // Send Trigger
@@ -49,19 +49,10 @@ function RemoteContent() {
         }, 3500); // 3s countdown + buffer
     };
 
-    if (!sessionId) {
-        return (
-            <div className="container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
-                <h1 style={{ color: 'var(--error)' }}>Chyba připojení</h1>
-                <p>Není zadán kód relace. Naskenujte QR kód znovu.</p>
-            </div>
-        );
-    }
-
     return (
         <div className="container" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', height: '100vh', justifyContent: 'center', alignItems: 'center' }}>
             <div style={{ position: 'absolute', top: '1rem', left: '1rem', opacity: 0.5, fontSize: '0.8rem' }}>
-                ID: {sessionId}
+                Remote
             </div>
 
             {counting ? (
