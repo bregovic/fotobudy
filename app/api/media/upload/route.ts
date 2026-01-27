@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
-import { pipeline } from 'stream';
-import { promisify } from 'util';
 
-const pump = promisify(pipeline);
+export const dynamic = 'force-dynamic';
+
 const prisma = new PrismaClient();
 
 export async function POST(req: NextRequest) {
@@ -40,23 +39,23 @@ export async function POST(req: NextRequest) {
         const filePath = path.join(uploadDir, filename);
         fs.writeFileSync(filePath, buffer);
 
-        // Uložit do DB (pokusíme se, ale nezboříme to, pokud DB nejede)
+        // Uložit do DB a vrátit URL na náš View Endpoint
+        const publicUrl = `/api/view/${filename}`;
+
         let media;
         try {
             media = await prisma.media.create({
                 data: {
                     type: type,
-                    url: `/uploads/${filename}`,
+                    url: publicUrl,
                     isPrivate: false
                 }
             });
         } catch (dbError) {
             console.warn("DB Save failed (running without DB?):", dbError);
-            // Fallback object pro odpověď
-            media = { url: `/uploads/${filename}`, type };
+            media = { url: publicUrl, type };
         }
 
-        // Bridge očekává { url: ... }
         return NextResponse.json({ success: true, url: media.url, media });
 
     } catch (e: any) {
