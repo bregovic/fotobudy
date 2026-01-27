@@ -16,6 +16,9 @@ export default function ProfilePage() {
     // AI Settings
     const [openAiKey, setOpenAiKey] = useState('');
 
+    // System Settings
+    const [useCloudStream, setUseCloudStream] = useState(false);
+
     // Načtení při startu
     useEffect(() => {
         const savedSmtp = localStorage.getItem('smtp_config');
@@ -31,6 +34,9 @@ export default function ProfilePage() {
 
         const savedKey = localStorage.getItem('openai_api_key');
         if (savedKey) setOpenAiKey(savedKey);
+
+        const savedCloud = localStorage.getItem('use_cloud_stream');
+        if (savedCloud === 'true') setUseCloudStream(true);
 
         // Auto-login logic (skipped)
     }, []);
@@ -53,6 +59,7 @@ export default function ProfilePage() {
         };
         localStorage.setItem('smtp_config', JSON.stringify(smtpConfig));
         localStorage.setItem('openai_api_key', openAiKey);
+        localStorage.setItem('use_cloud_stream', String(useCloudStream));
 
         alert('Nastavení uloženo! ✅\nZměny se projeví v Kiosku.');
     };
@@ -107,6 +114,23 @@ export default function ProfilePage() {
             </div>
 
             <div className="max-w-2xl mx-auto bg-slate-900 p-8 rounded-2xl shadow-xl border border-slate-700 space-y-8">
+
+                {/* System Section */}
+                <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-blue-400 border-b border-blue-500/30 pb-2">⚙️ Systém</h3>
+                    <div className="flex items-center justify-between p-4 bg-slate-950 rounded-xl border border-slate-700">
+                        <div>
+                            <h4 className="font-medium text-white">Cloud Stream Režim</h4>
+                            <p className="text-sm text-slate-500">Používat snapshoty místo přímého streamu (Nutné pro HTTPS/Railway).</p>
+                        </div>
+                        <button
+                            onClick={() => setUseCloudStream(!useCloudStream)}
+                            className={`w-14 h-8 rounded-full transition-colors relative ${useCloudStream ? 'bg-blue-600' : 'bg-slate-700'}`}
+                        >
+                            <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform shadow-sm ${useCloudStream ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                        </button>
+                    </div>
+                </div>
 
                 {/* SMTP Section */}
                 <div className="space-y-4">

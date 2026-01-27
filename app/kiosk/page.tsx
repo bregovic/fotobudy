@@ -6,6 +6,13 @@ import Link from 'next/link';
 const SESSION_ID = 'main';
 const DEFAULT_IP = '127.0.0.1';
 
+// Session Settings Type
+type SessionSettings = {
+    email: string;
+    isBW: boolean;
+    isPrivate: boolean;
+};
+
 export default function KioskPage() {
     const [status, setStatus] = useState<'idle' | 'countdown' | 'review'>('idle');
     const [countdown, setCountdown] = useState(3);
@@ -15,14 +22,21 @@ export default function KioskPage() {
     // UI States
     const [showSettings, setShowSettings] = useState(false);
     const [showGallery, setShowGallery] = useState(false);
-    const [showEmailModal, setShowEmailModal] = useState(false);
+    const [showEmailModal, setShowEmailModal] = useState(false); // Pro manuální poslání
     const [emailInput, setEmailInput] = useState('');
     const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]);
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+    // Session Settings (User Configurable)
+    const [sessionSettings, setSessionSettings] = useState<SessionSettings>({
+        email: '',
+        isBW: false,
+        isPrivate: false
+    });
+
     const [isHttps, setIsHttps] = useState(false);
 
-    // Configuration
+    // Configuration (System)
     const [cameraIp, setCameraIp] = useState(DEFAULT_IP);
     const [useCloudStream, setUseCloudStream] = useState(false);
     const [isConfigured, setIsConfigured] = useState(false);
@@ -49,14 +63,19 @@ export default function KioskPage() {
             setIsHttps(isSecure);
             const savedIp = localStorage.getItem('camera_ip');
             if (savedIp) setCameraIp(savedIp);
+
+            // Cloud Stream se nyní načítá POUZE z LocalStorage (nastaveno v Profilu)
             const savedCloud = localStorage.getItem('use_cloud_stream');
-            const isRailway = window.location.hostname.includes('railway.app');
-            if (isSecure || isRailway || savedCloud === 'true') {
+            if (savedCloud === 'true') {
                 setUseCloudStream(true);
-                if (isRailway) localStorage.setItem('use_cloud_stream', 'true');
+            } else if (isSecure || window.location.hostname.includes('railway.app')) {
+                // Fallback pro Railway, pokud není explicitně zakázáno/nastaveno
+                setUseCloudStream(true);
             }
+
             setIsConfigured(true);
         }
+
         fetch('/api/session', {
             method: 'POST',
             body: JSON.stringify({ id: SESSION_ID }),
@@ -84,16 +103,38 @@ export default function KioskPage() {
                         setStatus('review');
                         setCountdown(0);
                         processingRef.current = false;
+
+                        // AUTO-EMAIL
+                        if (sessionSettings.email && sessionSettings.email.includes('@')) {
+                            autoSendEmail(data.latest.url, sessionSettings.email);
+                        }
                     }
                 }
             } catch (e) { }
         }, 1000);
         return () => clearInterval(interval);
-    }, [status]);
+    }, [status, sessionSettings]); // Přidáno sessionSettings do deps, aby auto-email měl aktuální hodnotu
 
     // --- ACTIONS ---
     const saveIp = (ip: string) => { setCameraIp(ip); localStorage.setItem('camera_ip', ip); };
-    const saveCloud = (val: boolean) => { setUseCloudStream(val); localStorage.setItem('use_cloud_stream', String(val)); };
+
+    const autoSendEmail = async (photoUrl: string, email: string) => {
+        showToast('Automaticky odesílám email... 📨');
+        let smtpConfig = null;
+        try {
+            const saved = localStorage.getItem('smtp_config');
+            if (saved) smtpConfig = JSON.parse(saved);
+
+            await fetch('/api/email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, photoUrl, smtpConfig })
+            });
+            showToast('Auto-Email odeslán! ✅');
+        } catch (e) {
+            console.error(e);
+        }
+    };
 
     const startCountdown = () => {
         if (processingRef.current) return;
@@ -142,10 +183,12 @@ export default function KioskPage() {
                 const res = await fetch(`http://${cameraIp}:5555/shoot`, { method: 'POST' });
                 const data = await res.json();
                 if (data.success) {
-                    setLastPhoto(data.url.startsWith('http') ? data.url : `http://${cameraIp}:5555${data.url}`);
-                    setStatus('review');
+                    // Lokální bridge okamžitě vrací URL, nemusíme čekat na poll
+                    // Ale poll to zachytí taky. Duplicita? Poll má timestamps check, takže OK.
+                    // Pro jistotu zde nic nenastavujeme a necháme to na Polling, 
+                    // aby fungoval Auto-Email konzistentně na jednom místě.
                 }
-                processingRef.current = false;
+                // processingRef necháme true, dokud poll nenajde fotku nebo nevyprší timeout
             } catch (e) {
                 showToast('Chyba spojení s kamerou.');
                 processingRef.current = false;
@@ -207,7 +250,6 @@ export default function KioskPage() {
         }
         showToast('Odesílám email... 📨');
 
-        // Načtení custom SMTP nastavení z LocalStorage (z Profilu)
         let smtpConfig = null;
         try {
             const saved = localStorage.getItem('smtp_config');
@@ -221,7 +263,7 @@ export default function KioskPage() {
                 body: JSON.stringify({
                     email: emailInput,
                     photoUrl: lastPhoto,
-                    smtpConfig: smtpConfig // Posíláme nastavení serveru
+                    smtpConfig: smtpConfig
                 })
             });
             const data = await res.json();
@@ -258,11 +300,11 @@ export default function KioskPage() {
                 </div>
             )}
 
-            {/* Warning Overlay (Shifted down) */}
+            {/* Warning Overlay */}
             {isHttps && !useCloudStream && cameraIp === '127.0.0.1' && status === 'idle' && (
                 <div className="absolute top-20 left-4 z-40 bg-yellow-100 text-yellow-800 p-3 rounded-xl flex items-center gap-3 text-sm shadow-sm max-w-sm">
                     <AlertTriangle size={20} />
-                    <div>Zapněte <b>Cloud Stream</b> pro správnou funkci.</div>
+                    <div>Zapněte <b>Cloud Stream</b> v Profilu.</div>
                 </div>
             )}
 
@@ -270,11 +312,13 @@ export default function KioskPage() {
             <div className="absolute inset-0 bg-black flex items-center justify-center">
 
                 {status === 'review' && lastPhoto ? (
-                    <img src={lastPhoto} className="w-full h-full object-contain bg-slate-900" />
+                    <img
+                        src={lastPhoto}
+                        className={`w-full h-full object-contain bg-slate-900 ${sessionSettings.isBW ? 'grayscale' : ''}`} // Aplikace ČB filtru
+                    />
                 ) : (
                     <div className="w-full h-full relative overflow-hidden flex items-center justify-center">
 
-                        {/* Placeholder when Stream is Down */}
                         {streamError && useCloudStream && (
                             <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500 z-10 bg-slate-900/50">
                                 <CameraOff size={48} className="mb-2 opacity-50" />
@@ -284,7 +328,7 @@ export default function KioskPage() {
 
                         <img
                             src={!isConfigured ? '' : (useCloudStream ? `/api/stream/snapshot?t=${liveTick}` : `http://${cameraIp}:5521/live`)}
-                            className={`w-full h-full object-contain transition-opacity duration-500 ${streamError && useCloudStream ? 'opacity-0' : 'opacity-100'}`}
+                            className={`w-full h-full object-contain transition-opacity duration-500 ${streamError && useCloudStream ? 'opacity-0' : 'opacity-100'} ${sessionSettings.isBW ? 'grayscale' : ''}`} // Aplikace ČB filtru
                             onLoad={() => {
                                 setStreamError(false);
                                 if (useCloudStream) setTimeout(() => setLiveTick(Date.now()), 10);
@@ -300,11 +344,10 @@ export default function KioskPage() {
                 )}
             </div>
 
-            {/* ... Ukládání Overlay ... */}
-
+            {/* OVERLAYS */}
             {status === 'countdown' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-50">
-                    <div className="text-[15rem] font-black text-white drop-shadow-2xl animate-bounce">{countdown}</div>
+                    <div className={`text-[15rem] font-black text-white drop-shadow-2xl animate-bounce ${sessionSettings.isBW ? 'grayscale' : ''}`}>{countdown}</div>
                 </div>
             )}
 
@@ -318,7 +361,66 @@ export default function KioskPage() {
                 </div>
             )}
 
-            {/* GALLERY */}
+            {/* SETTINGS MODAL (User Facing) */}
+            {showSettings && (
+                <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-8 animate-in fade-in zoom-in duration-200">
+                    <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 max-w-lg w-full shadow-2xl text-white">
+                        <div className="flex justify-between items-center mb-8">
+                            <h2 className="text-2xl font-bold">Nastavení Focení</h2>
+                            <button onClick={() => setShowSettings(false)} className="p-2 bg-white/10 rounded-full hover:bg-white/20"><X /></button>
+                        </div>
+
+                        <div className="space-y-4">
+
+                            {/* Auto Email */}
+                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
+                                <label className="block text-sm text-slate-400 mb-2">Automaticky posílat na Email</label>
+                                <input
+                                    type="email"
+                                    placeholder="tvuj@email.cz"
+                                    value={sessionSettings.email}
+                                    onChange={(e) => setSessionSettings({ ...sessionSettings, email: e.target.value })}
+                                    className="w-full p-3 bg-slate-950 border border-slate-700 rounded-lg focus:border-indigo-500 outline-none text-white font-mono"
+                                />
+                                <p className="text-xs text-slate-500 mt-2">Každá vyfocená fotka se hned odešle.</p>
+                            </div>
+
+                            {/* B&W Toggle */}
+                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl flex items-center justify-between">
+                                <div><h3 className="font-semibold text-lg">⚫ Černobílá fotka</h3><p className="text-slate-400 text-sm mt-1">Noir styl</p></div>
+                                <button
+                                    onClick={() => setSessionSettings({ ...sessionSettings, isBW: !sessionSettings.isBW })}
+                                    className={`w-14 h-8 rounded-full transition-colors relative ${sessionSettings.isBW ? 'bg-indigo-500' : 'bg-slate-600'}`}
+                                >
+                                    <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform shadow-sm ${sessionSettings.isBW ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                                </button>
+                            </div>
+
+                            {/* Private Toggle */}
+                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl flex items-center justify-between">
+                                <div><h3 className="font-semibold text-lg">🔒 Soukromé fotky</h3><p className="text-slate-400 text-sm mt-1">Jen pro vás (neukládat do historie?)</p></div>
+                                <button
+                                    onClick={() => setSessionSettings({ ...sessionSettings, isPrivate: !sessionSettings.isPrivate })}
+                                    className={`w-14 h-8 rounded-full transition-colors relative ${sessionSettings.isPrivate ? 'bg-indigo-500' : 'bg-slate-600'}`}
+                                >
+                                    <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform shadow-sm ${sessionSettings.isPrivate ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                                </button>
+                            </div>
+
+                            {!useCloudStream && (
+                                <div className="p-4 rounded-xl bg-slate-950/50 text-center border border-dashed border-slate-800 mt-4">
+                                    <label className="block text-xs text-slate-500 mb-1">Bridge IP (Expert)</label>
+                                    <input type="text" value={cameraIp} onChange={(e) => saveIp(e.target.value)} className="w-32 bg-transparent text-center text-xs text-slate-400 outline-none" />
+                                </div>
+                            )}
+
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ... GALLERY, EMAIL MODAL, CONTROLS (Standard) ... */}
+
             {showGallery && (
                 <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-xl flex flex-col p-8 animate-in fade-in duration-300">
                     <div className="flex justify-between items-center mb-8">
@@ -328,7 +430,7 @@ export default function KioskPage() {
                     <div className="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4">
                         {galleryPhotos.map((photo) => (
                             <div key={photo.id} className="aspect-[3/2] bg-slate-800 rounded-xl overflow-hidden relative group">
-                                <img src={photo.url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" loading="lazy" onError={(e) => { const parent = e.currentTarget.parentElement; if (parent) parent.style.display = 'none'; }} />
+                                <img src={photo.url} className={`w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity ${sessionSettings.isBW ? 'grayscale' : ''}`} loading="lazy" onError={(e) => { const parent = e.currentTarget.parentElement; if (parent) parent.style.display = 'none'; }} />
                                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
                                     <button className="p-3 bg-white text-black rounded-full hover:scale-110 transition-transform" onClick={() => { setLastPhoto(photo.url); setStatus('review'); setShowGallery(false); }}><Printer size={20} /></button>
                                     <button className={`p-3 rounded-full hover:scale-110 transition-colors ${confirmDeleteId === photo.id ? 'bg-red-600 text-white animate-pulse' : 'bg-white/20 text-white hover:bg-red-500'}`} onClick={(e) => deletePhoto(photo.id, photo.url, e)}><Trash2 size={20} /></button>
@@ -353,25 +455,6 @@ export default function KioskPage() {
                                 <input type="email" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} placeholder="tvuj@email.cz" autoFocus className="w-full p-4 bg-slate-950 border border-slate-700 rounded-lg focus:border-indigo-500 outline-none text-white text-lg placeholder-slate-600" />
                             </div>
                             <button onClick={sendEmail} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-lg flex items-center justify-center gap-2 active:scale-95"><Send size={24} /> Odeslat fotku</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {showSettings && (
-                <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-8 animate-in fade-in zoom-in duration-200">
-                    <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 max-w-lg w-full shadow-2xl text-white">
-                        <div className="flex justify-between items-center mb-8">
-                            <h2 className="text-2xl font-bold">Nastavení</h2>
-                            <button onClick={() => setShowSettings(false)} className="p-2 bg-white/10 rounded-full hover:bg-white/20"><X /></button>
-                        </div>
-                        <div className="space-y-4">
-                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl flex items-center justify-between">
-                                <div><h3 className="font-semibold text-lg">☁️ Cloud Stream</h3><p className="text-slate-400 text-sm mt-1">Snapshot režim (Webcam style)</p></div>
-                                <button onClick={() => saveCloud(!useCloudStream)} className={`w-14 h-8 rounded-full transition-colors relative ${useCloudStream ? 'bg-indigo-500' : 'bg-slate-600'}`}><div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform shadow-sm ${useCloudStream ? 'translate-x-7' : 'translate-x-1'}`}></div></button>
-                            </div>
-                            {!useCloudStream && (<div className="p-5 bg-slate-800 border border-slate-700 rounded-xl"><label className="block text-sm text-slate-400 mb-2">Lokální IP Bridge</label><input type="text" value={cameraIp} onChange={(e) => saveIp(e.target.value)} className="w-full p-3 bg-slate-950 border border-slate-700 rounded-lg focus:border-indigo-500 outline-none text-white font-mono" /></div>)}
-                            <div className="p-4 rounded-xl bg-slate-950/50 text-center"><p className="text-xs text-slate-500">ID Session: {SESSION_ID}</p></div>
                         </div>
                     </div>
                 </div>
