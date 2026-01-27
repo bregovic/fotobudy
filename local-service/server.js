@@ -33,6 +33,7 @@ app.get('/status', (req, res) => {
 });
 
 app.post('/shoot', (req, res) => {
+    // Pokud už běží focení, odmítneme další pokus
     if (isCapturing) {
         console.warn('[BRIDGE] Ignoruji požadavek: Fotoaparát je zaneprázdněn.');
         return res.status(429).json({ success: false, error: 'Camera busy', busy: true });
@@ -46,20 +47,20 @@ app.post('/shoot', (req, res) => {
     const cmd = CAMERA_CMD_TEMPLATE.replace('%filename%', fullPath);
 
     console.log(`[BRIDGE] Spouštím fotoaparát: ${cmd}`);
-    isCapturing = true;
+    isCapturing = true; // ZAMYKÁME
 
     // Timeout pojistka - kdyby program zamrzl, uvolníme zámek po 10 vteřinách
     const timeout = setTimeout(() => {
         if (isCapturing) {
-            console.error('[BRIDGE] Timeout: Kamera neodpověděla včas.');
-            isCapturing = false;
+            console.error('[BRIDGE] Timeout: Kamera neodpověděla včas (10s).');
+            isCapturing = false; // UVOLŇUJEME
         }
     }, 10000);
 
     // Spuštění externího programu (DigiCamControl)
     exec(cmd, (error, stdout, stderr) => {
         clearTimeout(timeout);
-        isCapturing = false; // Uvolníme zámek
+        isCapturing = false; // UVOLŇUJEME (Hotovo)
 
         if (error) {
             console.error(`[CHYBA] Exec error: ${error.message}`);
@@ -77,8 +78,9 @@ app.post('/shoot', (req, res) => {
                 url: `/photos/${filename}`
             });
         } else {
-            console.error(`[CHYBA] Soubor nebyl vytvořen! Cesta: ${fullPath}`);
-            return res.status(500).json({ success: false, error: 'Soubor nevznikl', output: stdout });
+            // Zkusíme vrátit úspěch i tak, někdy DCC uloží jinam, ale aspoň nezablokujeme Kiosk
+            console.error(`[CHYBA] Soubor nebyl nalezen na přesné cestě: ${fullPath}`);
+            res.status(500).json({ success: false, error: 'Soubor nevznikl', output: stdout });
         }
     });
 });
@@ -92,5 +94,5 @@ app.post('/print', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`\n📷 FotoBuddy Bridge (Canon 5D) běží na http://localhost:${PORT}`);
+    console.log(`\n📷 FotoBuddy Bridge (Locking Enabled) běží na http://localhost:${PORT}`);
 });

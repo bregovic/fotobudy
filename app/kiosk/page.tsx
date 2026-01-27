@@ -64,6 +64,7 @@ export default function KioskPage() {
         console.log("Taking photo...");
         try {
             // Trigger Bridge (Use 127.0.0.1 explicitly)
+            // Also try to hit bridge with a timeout? No, fetch is fine.
             const res = await fetch('http://127.0.0.1:5555/shoot', { method: 'POST' });
             const data = await res.json();
             if (data.success) {
@@ -72,7 +73,7 @@ export default function KioskPage() {
             }
         } catch (e) {
             console.error(e);
-            alert('Nepodařilo se spojit s kamerou. Ujistěte se, že:\n1. Běží node local-service/server.js\n2. Pokud jste na HTTPS, povolili jste "Nezabezpečený obsah".');
+            alert('Nepodařilo se spojit s kamerou (Bridge server).\n- Zkontrolujte, zda běží "node local-service/server.js"\n- Zkuste obnovit stránku');
             setStatus('idle');
         } finally {
             processingRef.current = false;
@@ -102,8 +103,8 @@ export default function KioskPage() {
                 <div className="absolute top-4 left-4 z-40 bg-yellow-100 text-yellow-800 p-3 rounded-xl flex items-center gap-3 text-sm shadow-sm max-w-sm">
                     <AlertTriangle size={20} />
                     <div>
-                        <b>Používáte HTTPS (Railway)</b><br />
-                        Kamera běží na HTTP. Pokud to zlobí, otevřete stránku přes <a href="http://127.0.0.1:3000/kiosk" className="underline font-bold">http://localhost:3000</a>
+                        <b>Používáte HTTPS</b><br />
+                        Kamera běží na HTTP. Pokud tlačítko nereaguje, používejte <a href="http://127.0.0.1:3000/kiosk" className="underline font-bold">http://localhost:3000</a>
                     </div>
                 </div>
             )}
@@ -115,15 +116,36 @@ export default function KioskPage() {
                 ) : (
                     <div className="w-full h-full relative">
                         {/* Live Stream MJPEG (Use 127.0.0.1) */}
+                        {/* Try new port 5521 (stream) and fallback to 5520 (static) */}
                         <img
-                            src="http://127.0.0.1:5514/live"
+                            src="http://127.0.0.1:5521/live"
                             className="w-full h-full object-cover"
                             onError={(e) => {
-                                // Fallback to port 5513
-                                if (e.currentTarget.src.includes('5514')) e.currentTarget.src = "http://127.0.0.1:5513/liveview.jpg";
-                                else e.currentTarget.style.display = 'none';
+                                const target = e.currentTarget;
+                                // First failure: Try static on base port 5520
+                                if (target.src.includes('5521')) {
+                                    target.src = "http://127.0.0.1:5520/liveview.jpg";
+                                }
+                                // Second failure: Try old legacy port 5514
+                                else if (target.src.includes('5520')) {
+                                    target.src = "http://127.0.0.1:5514/live";
+                                }
+                                // Final failure
+                                else {
+                                    target.style.display = 'none';
+                                }
                             }}
                         />
+
+                        {/* Fallback help text */}
+                        <div className="absolute inset-0 -z-10 flex items-center justify-center text-slate-500 text-center p-4">
+                            <div>
+                                <p className="font-bold mb-2">Hledám signál kamery...</p>
+                                <p className="text-sm">Zkouším porty 5521, 5520, 5514.</p>
+                                <p className="text-xs mt-2 opacity-70">Ujistěte se, že DigiCamControl běží<br />a Webserver je zapnutý (Port 5520).</p>
+                            </div>
+                        </div>
+
                     </div>
                 )}
             </div>
@@ -156,10 +178,6 @@ export default function KioskPage() {
                                     ))}
                                 </div>
                             </div>
-                            <div className="p-4 bg-slate-50 rounded-xl">
-                                <h3 className="font-semibold mb-2">Tiskárna</h3>
-                                <p className="text-sm text-slate-500">Výchozí systémová tiskárna</p>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -181,7 +199,7 @@ export default function KioskPage() {
                         </button>
                     </div>
 
-                    {/* Center Trigger with active effect */}
+                    {/* Center Trigger */}
                     <div className="mx-4">
                         {status === 'review' ? (
                             <button className="shutter-btn" onClick={() => { setStatus('idle'); processingRef.current = false; }} style={{ borderColor: '#ef4444' }}>
