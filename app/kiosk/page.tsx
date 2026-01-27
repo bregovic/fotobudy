@@ -94,24 +94,35 @@ export default function KioskPage() {
                 {/* 1. LIVE VIEW (DigiCamControl Stream) */}
                 {status === 'idle' || status === 'countdown' ? (
                     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-                        {/* Live stream z DCC webserveru (nutno zapnout v DCC: File->Settings->Web Server->Port 5513) */}
+                        {/* Live stream z DCC (MJPEG Stream na portu 5514) */}
                         <img
-                            src="http://localhost:5513/liveview.jpg"
+                            src="http://localhost:5514/live"
                             onError={(e) => {
-                                // Fallback pokud nebeží stream
-                                e.currentTarget.style.display = 'none';
-                                e.currentTarget.parentElement!.style.background = '#1e293b'; // Fallback color
+                                // Fallback na port 5513 (Jpg statický)
+                                const target = e.currentTarget;
+                                if (target.src !== 'http://localhost:5513/liveview.jpg') {
+                                    target.src = 'http://localhost:5513/liveview.jpg';
+                                } else {
+                                    target.style.display = 'none';
+                                    target.parentElement!.style.background = '#1e293b';
+                                }
                             }}
                             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                         />
 
                         {/* Fallback text pokud se nenačte obrázek */}
                         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 0, color: '#64748b', pointerEvents: 'none' }}>
-                            <p>Live View</p>
-                            <p style={{ fontSize: '0.8rem' }}>(Zapněte v DigiCamControl: File - Settings - Webserver - Port 5513)</p>
-                            <div style={{ marginTop: '2rem' }}>Připojit se:</div>
-                            <div style={{ background: 'white', padding: '1rem', borderRadius: '12px', display: 'inline-block', marginTop: '1rem' }}>
-                                <QRCodeSVG value={remoteUrl} size={150} />
+                            <div style={{ pointerEvents: 'auto' }}> {/* Zapnout pointer events pro QR */}
+                                <p style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>Live View</p>
+                                <p style={{ fontSize: '0.8rem' }}>Pokud nevidíte obraz, zkontrolujte:</p>
+                                <p style={{ fontSize: '0.8rem' }}>1. DigiCamControl běží a kamera je v režimu Live View</p>
+                                <p style={{ fontSize: '0.8rem' }}>2. Webserver je zapnutý (Port 5513/5514)</p>
+                                <p style={{ fontSize: '0.8rem' }}>3. Povolte "Nezabezpečený obsah" (Mixed Content) v prohlížeči</p>
+
+                                <div style={{ marginTop: '2rem' }}>Připojit se:</div>
+                                <div style={{ background: 'white', padding: '1rem', borderRadius: '12px', display: 'inline-block', marginTop: '1rem' }}>
+                                    <QRCodeSVG value={remoteUrl} size={150} />
+                                </div>
                             </div>
                         </div>
                     </div>
