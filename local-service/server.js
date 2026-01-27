@@ -11,7 +11,7 @@ app.use(cors());
 app.use(express.json());
 
 // --- KONFIGURACE PRO CANON 5D MARK II ---
-const CAMERA_CMD_TEMPLATE = '"C:\\Program Files (x86)\\digiCamControl\\CameraControlCmd.exe" /capture /filename "%filename%"';
+const CAMERA_CMD_TEMPLATE = '"C:\\Program Files (x86)\\digiCamControl\\CameraControlCmd.exe" /capture /noautofocus /filename "%filename%"';
 const SAVE_DIR = path.join(process.cwd(), 'public', 'photos');
 
 // Zámek proti vícenásobnému spuštění
@@ -47,41 +47,47 @@ app.post('/shoot', (req, res) => {
     const cmd = CAMERA_CMD_TEMPLATE.replace('%filename%', fullPath);
 
     console.log(`[BRIDGE] Spouštím fotoaparát: ${cmd}`);
-    isCapturing = true; // ZAMYKÁME
+    isCapturing = true;
 
-    // Timeout pojistka - kdyby program zamrzl, uvolníme zámek po 10 vteřinách
+    // Timeout pojistka
     const timeout = setTimeout(() => {
         if (isCapturing) {
-            console.error('[BRIDGE] Timeout: Kamera neodpověděla včas (10s).');
-            isCapturing = false; // UVOLŇUJEME
+            console.error('[BRIDGE] Timeout: Kamera neodpověděla včas. Zabíjím proces...');
+            exec('taskkill /F /IM CameraControlCmd.exe', () => { }); // Násilné ukončení
+            isCapturing = false;
         }
-    }, 10000);
+    }, 15000); // Prodlouženo na 15s
 
-    // Spuštění externího programu (DigiCamControl)
-    exec(cmd, (error, stdout, stderr) => {
-        clearTimeout(timeout);
-        isCapturing = false; // UVOLŇUJEME (Hotovo)
+    // PREVENTIVNÍ ÚKLID: Zkusíme zabít staré visící procesy (kromě hlavního DCC, ten se jmenuje jinak)
+    // CameraControlCmd.exe je ten řádkový nástroj co se seká
+    exec('taskkill /F /IM CameraControlCmd.exe', (err) => {
+        // Ignorujeme chybu (pokud nic neběželo, vrátí to chybu, to je ok)
 
-        if (error) {
-            console.error(`[CHYBA] Exec error: ${error.message}`);
-            return res.status(500).json({ success: false, error: 'Chyba příkazu', details: stderr });
-        }
+        // Teď teprve fotíme
+        exec(cmd, (error, stdout, stderr) => {
+            clearTimeout(timeout);
+            isCapturing = false;
 
-        console.log(`[BRIDGE] DigiCamOutput: ${stdout}`);
+            if (error) {
+                // Pokud to spadlo, asi se to nepotkalo s kamerou
+                console.error(`[CHYBA] Exec error: ${error.message}`);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Chyba příkazu (Kamera busy nebo odpojena)',
+                    details: stderr
+                });
+            }
 
-        // Ověření, zda soubor skutečně vznikl
-        if (fs.existsSync(fullPath)) {
-            console.log(`[BRIDGE] Fotka úspěšně uložena: ${filename}`);
-            res.json({
-                success: true,
-                filename: filename,
-                url: `/photos/${filename}`
-            });
-        } else {
-            // Zkusíme vrátit úspěch i tak, někdy DCC uloží jinam, ale aspoň nezablokujeme Kiosk
-            console.error(`[CHYBA] Soubor nebyl nalezen na přesné cestě: ${fullPath}`);
-            res.status(500).json({ success: false, error: 'Soubor nevznikl', output: stdout });
-        }
+            console.log(`[BRIDGE] DigiCamOutput: ${stdout}`);
+
+            if (fs.existsSync(fullPath)) {
+                console.log(`[BRIDGE] Fotka úspěšně uložena: ${filename}`);
+                res.json({ success: true, filename: filename, url: `/photos/${filename}` });
+            } else {
+                console.error(`[CHYBA] Soubor nevznikl: ${fullPath}`);
+                res.status(500).json({ success: false, error: 'Soubor nevznikl' });
+            }
+        });
     });
 });
 
