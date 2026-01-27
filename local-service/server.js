@@ -165,9 +165,32 @@ function startSnapshotLoop() {
 }
 
 app.post('/print', (req, res) => {
-    const { filename } = req.body;
-    exec(`mspaint /p "${path.join(SAVE_DIR, filename)}"`);
-    res.json({ success: true });
+    let { filename } = req.body;
+
+    // UI může poslat 'web_DSC_0001.jpg', ale my chceme tisknout originál 'DSC_0001.jpg'
+    if (filename.startsWith('web_')) {
+        filename = filename.replace('web_', '');
+    }
+
+    const filePath = path.join(SAVE_DIR, filename);
+    console.log(`[PRINT] Požadavek na tisk: ${filename}`);
+    console.log(`[PRINT] Cesta k originálu: ${filePath}`);
+
+    if (!fs.existsSync(filePath)) {
+        console.error('[PRINT] Soubor neexistuje!');
+        return res.status(404).json({ success: false, error: 'File not found' });
+    }
+
+    // Tisk přes MS Paint (nejjednodušší cesta na Windows bez externích utilit)
+    // /p tiskne na VÝCHOZÍ tiskárnu -> Proto musí být Selphy nastavena jako Default.
+    const printCmd = `mspaint /p "${filePath}"`;
+
+    exec(printCmd, (error) => {
+        if (error) console.error('[PRINT] Chyba spuštění tisku:', error);
+        else console.log('[PRINT] Odesláno do fronty.');
+    });
+
+    res.json({ success: true, message: 'Odesláno na tisk' });
 });
 
 function startCommandPolling() {
