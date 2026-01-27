@@ -24,21 +24,39 @@ const LiveView = memo(({
     className?: string
 }) => {
     const [tick, setTick] = useState(Date.now());
+    const [hasError, setHasError] = useState(false);
     const streamUrl = !isConfigured ? '' : (useCloudStream ? `/api/stream/snapshot?t=${tick}` : `http://${cameraIp}:5521/live`);
 
     return (
-        <img
-            src={streamUrl}
-            className={`${className} ${isBW ? 'grayscale' : ''}`}
-            crossOrigin="anonymous"
-            onClick={onClick}
-            onLoad={() => { if (useCloudStream) setTimeout(() => setTick(Date.now()), 10); }}
-            onError={(e) => {
-                const t = e.currentTarget;
-                if (useCloudStream) setTimeout(() => setTick(Date.now()), 1000);
-                else if (t.src.includes('5521')) t.src = `http://${cameraIp}:5520/liveview.jpg`;
-            }}
-        />
+        <div className={`relative ${className}`}>
+            <img
+                src={streamUrl}
+                className={`w-full h-full object-contain ${isBW ? 'grayscale' : ''}`}
+                crossOrigin="anonymous"
+                onClick={onClick}
+                onLoad={() => {
+                    setHasError(false);
+                    if (useCloudStream) setTimeout(() => setTick(Date.now()), 10);
+                }}
+                onError={(e) => {
+                    const t = e.currentTarget;
+                    setHasError(true);
+                    if (useCloudStream) setTimeout(() => setTick(Date.now()), 1000);
+                    else if (t.src.includes('5521')) t.src = `http://${cameraIp}:5520/liveview.jpg`;
+                }}
+            />
+            {hasError && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 text-white p-4 text-center">
+                    <AlertTriangle size={48} className="text-yellow-500 mb-4" />
+                    <h3 className="text-xl font-bold mb-2">Žádný signál</h3>
+                    <p className="max-w-md">
+                        {useCloudStream
+                            ? "Zapněte prosím na PC skript 'scripts/stream_proxy.js'"
+                            : "Na HTTPS (Railway) nelze použít přímý stream. Zapněte v Nastavení 'Cloud Stream nebo System Cloud Stream' a spusťte Proxy."}
+                    </p>
+                </div>
+            )}
+        </div>
     );
 });
 LiveView.displayName = 'LiveView';
