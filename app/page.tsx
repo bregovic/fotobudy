@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import { Camera, Image as ImageIcon, User, Sparkles } from 'lucide-react';
 
@@ -12,11 +13,14 @@ export default function Home() {
 
       {/* Header */}
       <div className="text-center mb-12 relative z-10 flex flex-col items-center">
-        {/* Logo Blick & Cvak */}
-        <div className="relative w-80 md:w-96 h-auto hover:scale-105 transition-transform duration-500 drop-shadow-2xl">
-          <img
+        {/* Logo Blick & Cvak (Optimalizované) */}
+        <div className="relative w-80 md:w-96 hover:scale-105 transition-transform duration-500 drop-shadow-2xl flex justify-center">
+          <Image
             src="/logo.png"
             alt="Blick & Cvak"
+            width={500}
+            height={300}
+            priority // Načíst ihned!
             className="w-full h-auto object-contain"
           />
         </div>
@@ -50,7 +54,7 @@ export default function Home() {
         </Link>
 
         {/* Card 3: Galerie */}
-        <Link href="#" className="group">
+        <Link href="/gallery" className="group">
           <div className="glass glass-hover h-64 rounded-3xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 relative overflow-hidden">
             <div className="bg-slate-800/50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300 shadow-xl border border-white/10">
               <ImageIcon size={40} className="text-purple-400" />
@@ -61,13 +65,13 @@ export default function Home() {
         </Link>
 
         {/* Card 4: Profil */}
-        <Link href="#" className="group">
+        <Link href="/profile" className="group">
           <div className="glass glass-hover h-64 rounded-3xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 relative overflow-hidden">
             <div className="bg-slate-800/50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300 shadow-xl border border-white/10">
               <User size={40} className="text-emerald-400" />
             </div>
             <h2 className="text-2xl font-bold mb-2">Profil</h2>
-            <p className="text-sm text-slate-400">Přihlášení a správa</p>
+            <p className="text-sm text-slate-400">Nastavení a Email</p>
           </div>
         </Link>
 

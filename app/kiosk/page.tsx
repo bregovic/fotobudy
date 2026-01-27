@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send, Trash2, CameraOff } from 'lucide-react';
+import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send, Trash2, CameraOff, Home } from 'lucide-react';
+import Link from 'next/link';
 
 const SESSION_ID = 'main';
 const DEFAULT_IP = '127.0.0.1';
@@ -29,7 +30,7 @@ export default function KioskPage() {
     const lastSeenTimeRef = useRef<number>(0);
 
     // Stream Handling
-    const [streamError, setStreamError] = useState(false); // Nový stav pro chybu streamu
+    const [streamError, setStreamError] = useState(false);
 
     // Toast Notification System
     const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -205,11 +206,23 @@ export default function KioskPage() {
             return;
         }
         showToast('Odesílám email... 📨');
+
+        // Načtení custom SMTP nastavení z LocalStorage (z Profilu)
+        let smtpConfig = null;
+        try {
+            const saved = localStorage.getItem('smtp_config');
+            if (saved) smtpConfig = JSON.parse(saved);
+        } catch (e) { }
+
         try {
             const res = await fetch('/api/email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: emailInput, photoUrl: lastPhoto })
+                body: JSON.stringify({
+                    email: emailInput,
+                    photoUrl: lastPhoto,
+                    smtpConfig: smtpConfig // Posíláme nastavení serveru
+                })
             });
             const data = await res.json();
 
@@ -229,12 +242,27 @@ export default function KioskPage() {
     return (
         <div className="relative w-full h-full bg-gray-100 overflow-hidden flex flex-col items-center justify-center">
 
+            {/* HOME BUTTON */}
+            <div className="absolute top-4 left-4 z-50">
+                <Link href="/" className="p-3 bg-white/10 text-white rounded-full backdrop-blur-md flex items-center justify-center hover:bg-white/20 transition-colors">
+                    <Home size={24} />
+                </Link>
+            </div>
+
             {/* TOAST NOTIFICATION */}
             {toastMessage && (
                 <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[60] animate-in fade-in slide-in-from-top-4 duration-300 pointer-events-none">
                     <div className="bg-black/80 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-white/10">
                         <span className="font-medium text-sm">{toastMessage}</span>
                     </div>
+                </div>
+            )}
+
+            {/* Warning Overlay (Shifted down) */}
+            {isHttps && !useCloudStream && cameraIp === '127.0.0.1' && status === 'idle' && (
+                <div className="absolute top-20 left-4 z-40 bg-yellow-100 text-yellow-800 p-3 rounded-xl flex items-center gap-3 text-sm shadow-sm max-w-sm">
+                    <AlertTriangle size={20} />
+                    <div>Zapněte <b>Cloud Stream</b> pro správnou funkci.</div>
                 </div>
             )}
 
@@ -258,14 +286,13 @@ export default function KioskPage() {
                             src={!isConfigured ? '' : (useCloudStream ? `/api/stream/snapshot?t=${liveTick}` : `http://${cameraIp}:5521/live`)}
                             className={`w-full h-full object-contain transition-opacity duration-500 ${streamError && useCloudStream ? 'opacity-0' : 'opacity-100'}`}
                             onLoad={() => {
-                                setStreamError(false); // Obraz se načetl -> jsme online
+                                setStreamError(false);
                                 if (useCloudStream) setTimeout(() => setLiveTick(Date.now()), 10);
                             }}
                             onError={(e) => {
-                                // Chyba načítání (404)
                                 setStreamError(true);
                                 const target = e.currentTarget;
-                                if (useCloudStream) setTimeout(() => setLiveTick(Date.now()), 3000); // Počkáme 3s než to zkusíme znovu
+                                if (useCloudStream) setTimeout(() => setLiveTick(Date.now()), 3000);
                                 else if (target.src.includes('5521')) target.src = `http://${cameraIp}:5520/liveview.jpg`;
                             }}
                         />
@@ -273,7 +300,7 @@ export default function KioskPage() {
                 )}
             </div>
 
-            {/* ... Rest of UI (Overlays, Settings, Dock) ... */}
+            {/* ... Ukládání Overlay ... */}
 
             {status === 'countdown' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-50">
