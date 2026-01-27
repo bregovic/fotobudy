@@ -19,6 +19,10 @@ export default function ProfilePage() {
     // System Settings
     const [useCloudStream, setUseCloudStream] = useState(false);
 
+    // Email Template Settings
+    const [emailSubject, setEmailSubject] = useState('Tvoje fotka z FotoBuddy! 🥳');
+    const [emailBody, setEmailBody] = useState('Ahoj! Tady je tvoje fotka z akce. Užij si ji!');
+
     // Loading State
     const [loading, setLoading] = useState(false);
 
@@ -35,6 +39,11 @@ export default function ProfilePage() {
                     setSmtpPort(data.smtp_config.port || '587');
                     setSmtpUser(data.smtp_config.user || '');
                     setSmtpPass(data.smtp_config.pass || '');
+                }
+                // Email Template
+                if (data.email_template) {
+                    setEmailSubject(data.email_template.subject || 'Tvoje fotka z FotoBuddy! 🥳');
+                    setEmailBody(data.email_template.body || 'Ahoj! Tady je tvoje fotka z akce. Užij si ji!');
                 }
                 // AI
                 if (data.openai_api_key) setOpenAiKey(data.openai_api_key);
@@ -63,6 +72,10 @@ export default function ProfilePage() {
                 port: smtpPort,
                 user: smtpUser,
                 pass: smtpPass
+            },
+            email_template: {
+                subject: emailSubject,
+                body: emailBody
             },
             openai_api_key: openAiKey,
             use_cloud_stream: String(useCloudStream)
@@ -150,9 +163,33 @@ export default function ProfilePage() {
                     </div>
                 </div>
 
+                {/* EMAIL TEMPLATE Section */}
+                <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-pink-400 border-b border-pink-500/30 pb-2">💌 Šablona Emailu</h3>
+                    <div>
+                        <label className="block text-sm text-slate-500 mb-1">Předmět e-mailu</label>
+                        <input
+                            type="text"
+                            value={emailSubject}
+                            onChange={(e) => setEmailSubject(e.target.value)}
+                            className="w-full p-3 bg-slate-950 rounded-lg border border-slate-700 focus:border-pink-500 outline-none"
+                            placeholder="Tvoje fotka z akce!"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm text-slate-500 mb-1">Text zprávy</label>
+                        <textarea
+                            value={emailBody}
+                            onChange={(e) => setEmailBody(e.target.value)}
+                            className="w-full p-3 bg-slate-950 rounded-lg border border-slate-700 focus:border-pink-500 outline-none min-h-[100px]"
+                            placeholder="Díky, že jste dorazili..."
+                        />
+                    </div>
+                </div>
+
                 {/* SMTP Section */}
                 <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-emerald-400 border-b border-emerald-500/30 pb-2">📧 Email & SMTP</h3>
+                    <h3 className="text-lg font-semibold text-emerald-400 border-b border-emerald-500/30 pb-2">📧 Email & SMTP (Server)</h3>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="md:col-span-2">

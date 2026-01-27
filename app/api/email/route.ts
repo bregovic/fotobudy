@@ -17,14 +17,28 @@ export async function POST(req: NextRequest) {
         })) as any;
 
         if (!media || !media.data) {
+            console.error('Fotka nenalezena v DB, nelze odeslat prílohu.');
             return NextResponse.json({ error: 'Fotka nenalezena' }, { status: 404 });
         }
 
-        // 2. Nastavení SMTP (Pošťák)
+        // 2a. Načtení nastavení emailu (Subject/Body)
+        const templateSetting = await prisma.setting.findUnique({ where: { key: 'email_template' } });
+        let subject = 'Tvoje fotka z FotoBuddy! 🥳';
+        let body = 'Ahoj! Tady je tvoje fotka z akce. Užij si ji!';
+
+        if (templateSetting) {
+            try {
+                const tpl = JSON.parse(templateSetting.value);
+                if (tpl.subject) subject = tpl.subject;
+                if (tpl.body) body = tpl.body;
+            } catch { }
+        }
+
+        // 2b. Nastavení SMTP (Pošťák)
+        // Priorita: 1. DB, 2. Klient (Legacy), 3. ENV
         let transportConfig = null;
         let fromEmail = 'fotobuddy@example.com';
 
-        // POKUS 1: Config z DB (Priorita)
         const dbSetting = await prisma.setting.findUnique({ where: { key: 'smtp_config' } });
         let dbSmtp = null;
         if (dbSetting) {
@@ -40,7 +54,6 @@ export async function POST(req: NextRequest) {
             };
             fromEmail = dbSmtp.user;
         }
-        // POKUS 2: Config od klienta (Fallback, kdyby někdo používal starý frontend)
         else if (clientConfig && clientConfig.host) {
             transportConfig = {
                 host: clientConfig.host,
@@ -50,7 +63,6 @@ export async function POST(req: NextRequest) {
             };
             fromEmail = clientConfig.user;
         }
-        // POKUS 3: ENV variables
         else if (process.env.SMTP_HOST) {
             transportConfig = {
                 host: process.env.SMTP_HOST,
@@ -72,14 +84,22 @@ export async function POST(req: NextRequest) {
         await transporter.sendMail({
             from: `"FotoBuddy 📸" <${fromEmail}>`,
             to: email,
-            subject: 'Tvoje fotka z FotoBuddy! 🥳',
+            subject: subject,
+            text: body, // Plain text verze
             html: `
-                <div style="font-family: sans-serif; text-align: center; padding: 20px;">
-                    <h1>📸 Tady je tvůj úlovek!</h1>
-                    <p>Díky, že ses stavil(a) ve fotokoutku.</p>
+                <div style="font-family: sans-serif; text-align: center; padding: 20px; background-color: #f8fafc; border-radius: 10px;">
+                    <h1 style="color: #333;">📸 ${subject}</h1>
+                    <p style="font-size: 16px; color: #555;">${body.replace(/\n/g, '<br>')}</p>
+                    <div style="margin-top: 20px;">
+                    </div>
+                     <p style="font-size: 12px; color: #888; margin-top: 30px;">Odesláno z FotoBuddy</p>
                 </div>
             `,
-            attachments: [{ filename: filename || 'foto.jpg', content: media.data }],
+            attachments: [{
+                filename: filename || 'foto.jpg',
+                content: media.data,
+                // cid: 'photo' // Zrušil jsem CID, protože některým klientům to dělá problémy. Lepší poslat jako klasickou přílohu.
+            }],
         });
 
         return NextResponse.json({ success: true });
