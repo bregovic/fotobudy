@@ -12,7 +12,14 @@ export async function POST(req: NextRequest) {
     try {
         const formData = await req.formData();
         const file = formData.get('file') as File;
-        const type = formData.get('type') as string || 'VIDEO'; // VIDEO | PHOTO
+        let type = formData.get('type') as string;
+
+        if (!type) {
+            const ext = file.name.split('.').pop()?.toLowerCase();
+            if (ext === 'jpg' || ext === 'png' || ext === 'jpeg') type = 'PHOTO';
+            else if (ext === 'mp4' || ext === 'webm') type = 'VIDEO';
+            else type = 'PHOTO'; // Fallback
+        }
 
         if (!file) {
             return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
@@ -20,7 +27,9 @@ export async function POST(req: NextRequest) {
 
         const buffer = Buffer.from(await file.arrayBuffer());
         const timestamp = Date.now();
-        const filename = `${type.toLowerCase()}_${timestamp}_${file.name}`;
+        // Remove spaces and weird chars from filename
+        const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '');
+        const filename = `${type.toLowerCase()}_${timestamp}_${safeName}`;
 
         // Zajistit, že složka existuje
         const uploadDir = path.join(process.cwd(), 'public', 'uploads');
@@ -31,16 +40,24 @@ export async function POST(req: NextRequest) {
         const filePath = path.join(uploadDir, filename);
         fs.writeFileSync(filePath, buffer);
 
-        // Uložit do DB
-        const media = await prisma.media.create({
-            data: {
-                type: type,
-                url: `/uploads/${filename}`,
-                isPrivate: false // Defaultně veřejné, dokud nepřidáme logiku
-            }
-        });
+        // Uložit do DB (pokusíme se, ale nezboříme to, pokud DB nejede)
+        let media;
+        try {
+            media = await prisma.media.create({
+                data: {
+                    type: type,
+                    url: `/uploads/${filename}`,
+                    isPrivate: false
+                }
+            });
+        } catch (dbError) {
+            console.warn("DB Save failed (running without DB?):", dbError);
+            // Fallback object pro odpověď
+            media = { url: `/uploads/${filename}`, type };
+        }
 
-        return NextResponse.json({ success: true, media });
+        // Bridge očekává { url: ... }
+        return NextResponse.json({ success: true, url: media.url, media });
 
     } catch (e: any) {
         console.error("Upload error:", e);

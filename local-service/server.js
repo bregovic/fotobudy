@@ -12,18 +12,14 @@ const PORT = 5555;
 app.use(cors());
 app.use(express.json());
 
-// --- KONFIGURACE PRO HTTP TRIGGER ---
-// Místo CMD exe použijeme HTTP příkaz na běžící instanci
-// Port 5520 podle tvého nastavení
+// --- KONFIGURACE ---
 const DCC_API_URL = 'http://127.0.0.1:5520/?CMD=Capture';
 const SAVE_DIR = path.join(process.cwd(), 'public', 'photos');
+const CLOUD_API_URL = 'https://cvak.up.railway.app'; // Základní adresa cloudu
+const CLOUD_STREAM_URL = `${CLOUD_API_URL}/api/stream`;
+const CLOUD_UPLOAD_URL = `${CLOUD_API_URL}/api/media/upload`;
 
-// --- CLOUD STREAMING KONFIGURACE ---
-// Adresa tvého veřejného serveru na Railway
-const CLOUD_API_URL = 'https://cvak.up.railway.app/api/stream';
 let isStreaming = false;
-
-// Zámek
 let isCapturing = false;
 
 // Vytvoření složky
@@ -32,10 +28,6 @@ if (!fs.existsSync(SAVE_DIR)) {
 }
 
 app.use('/photos', express.static(SAVE_DIR));
-
-app.get('/status', (req, res) => {
-    res.json({ status: 'ready', mode: 'http-trigger', busy: isCapturing });
-});
 
 app.post('/shoot', async (req, res) => {
     if (isCapturing) {
@@ -47,30 +39,34 @@ app.post('/shoot', async (req, res) => {
     const startTime = Date.now();
 
     try {
-        // 1. Spustíme spoušť přes HTTP (pomocí nativního http modulu)
+        // 1. Spustíme spoušť
         await new Promise((resolve, reject) => {
             const request = http.get(DCC_API_URL, (response) => {
                 if (response.statusCode < 200 || response.statusCode > 299) {
-                    reject(new Error(`DigiCamControl vrátil status: ${response.statusCode}`));
+                    reject(new Error(`DigiCamControl status: ${response.statusCode}`));
                 } else {
-                    response.on('data', () => { }); // Konzumovat stream
+                    response.on('data', () => { });
                     response.on('end', resolve);
                 }
             });
-            request.on('error', (err) => reject(new Error(`Chyba spojení s DigiCamControl (Port 5520): ${err.message}`)));
+            request.on('error', (err) => reject(new Error(`Chyba spojení s DCC: ${err.message}`)));
         });
 
         console.log('[BRIDGE] Trigger OK, čekám na soubor...');
 
-        // 2. Čekáme na nový soubor ve složce (Polling)
-        // Čekáme max 15 sekund
+        // 2. Čekáme na soubor (15s timeout)
         const foundFile = await waitForNewFile(SAVE_DIR, startTime, 15000);
-
         console.log(`[BRIDGE] Fotka nalezena: ${foundFile}`);
+
+        // 3. UPLOAD NA CLOUD (Novinka!)
+        // Musíme fotku poslat na server, aby byla vidět na webu
+        const publicUrl = await uploadToCloud(foundFile);
+        console.log(`[BRIDGE] Fotka nahrána na cloud: ${publicUrl}`);
+
         res.json({
             success: true,
             filename: foundFile,
-            url: `/photos/${foundFile}`
+            url: publicUrl // Vracíme už veřejnou URL z cloudu
         });
 
     } catch (e) {
@@ -81,6 +77,43 @@ app.post('/shoot', async (req, res) => {
     }
 });
 
+// Funkce pro upload souboru na Cloud (multipart upload simulation)
+function uploadToCloud(filename) {
+    return new Promise((resolve, reject) => {
+        const filePath = path.join(SAVE_DIR, filename);
+        const fileContent = fs.readFileSync(filePath);
+
+        // Jednoduchý POST upload (vylepšete podle potřeby API)
+        // Zde předpokládáme, že server má endpoint /api/media/upload
+        // Pro zjednodušení použijeme base64 JSON, pokud nemáme multipart knihovnu
+        // ALE! Server /api/media/upload čeká FormData. 
+        // V Node.js bez knihoven je FormData peklo.
+        // Zkusíme poslat jako RAW body a server to musí pochopit, nebo použijeme 'curl' přes exec, což je spolehlivější hack.
+
+        // HACK: Použijeme 'curl' pro upload, protože psát multipart/form-data v čistém Node.js je na dlouho.
+        // Předpokládáme, že Windows má curl (Win10+ má).
+
+        const curlCmd = `curl -X POST -F "file=@${filePath}" ${CLOUD_UPLOAD_URL}`;
+        exec(curlCmd, (error, stdout, stderr) => {
+            if (error) {
+                console.warn("[UPLOAD] Curl selhal, vracím lokální URL fallback.");
+                // Fallback: Pokud upload selže, vrátíme aspoň název, ale web to asi nezobrazí
+                resolve(`/photos/${filename}`);
+                return;
+            }
+            try {
+                const response = JSON.parse(stdout);
+                if (response.url) resolve(response.url);
+                else resolve(`/photos/${filename}`);
+            } catch (e) {
+                console.log("[UPLOAD] Raw response:", stdout);
+                resolve(`/photos/${filename}`);
+            }
+        });
+    });
+}
+
+// ... Tisk a Stream zůstávají stejné ...
 app.post('/print', (req, res) => {
     const { filename } = req.body;
     console.log(`[BRIDGE] Odesílám na tiskárnu: ${filename}`);
@@ -90,103 +123,59 @@ app.post('/print', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`\n📷 FotoBuddy Bridge (HTTP Trigger Mode) běží na http://localhost:${PORT}`);
-    console.log(`ℹ️  Ujistěte se, že DigiCamControl ukládá fotky do:\n   ${SAVE_DIR}`);
-
-    // Automaticky spustit streamování do cloudu na pozadí
+    console.log(`\n📷 FotoBuddy Bridge (Cloud Upload Mode) běží na http://localhost:${PORT}`);
+    console.log(`ℹ️  Ukládání do: ${SAVE_DIR}`);
     startCloudStream();
 });
 
-// Funkce pro cloud stream bez fetch (pouze nativní http/https)
 function startCloudStream() {
     if (isStreaming) return;
     isStreaming = true;
-    console.log(`[STREAM] Začínám vysílat na: ${CLOUD_API_URL}`);
+    console.log(`[STREAM] Vysílám na: ${CLOUD_STREAM_URL}`);
 
     const loop = () => {
-        // 1. Stáhnout snímek z lokální kamery (MJPEG snapshot)
         http.get('http://127.0.0.1:5520/liveview.jpg', (res) => {
             if (res.statusCode !== 200) {
-                // Kamera asi nejede nebo server je dole
-                res.resume(); // Zahodit data (nutné pro uvolnění socketu)
+                res.resume();
                 return scheduleNext();
             }
-
-            // 2. Odeslat na cloud (HTTPS POST)
-            const uploadReq = https.request(CLOUD_API_URL, {
+            const uploadReq = https.request(CLOUD_STREAM_URL, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'image/jpeg',
-                    'Transfer-Encoding': 'chunked' // Streaming upload
-                }
-            }, (cloudRes) => {
-                // Hotovo, odpověď nás nezajímá, jen ji zkonzumujeme
-                cloudRes.on('data', () => { });
+                headers: { 'Content-Type': 'image/jpeg', 'Transfer-Encoding': 'chunked' }
+            }, (r) => { r.on('data', () => { }); scheduleNext(); });
 
-                // Hned jak se uploadne, plánujeme další
-                scheduleNext();
-            });
-
-            uploadReq.on('error', (e) => {
-                // console.warn('[STREAM] Upload error:', e.message);
-                scheduleNext();
-            });
-
-            // "Trubka" z kamery rovnou do cloudu
+            uploadReq.on('error', () => scheduleNext());
             res.pipe(uploadReq);
-
-        }).on('error', (e) => {
-            // Chyba stahování z kamery (asi neběží DigiCamControl)
-            // console.warn('[STREAM] Download error:', e.message);
-            scheduleNext();
-        });
+        }).on('error', () => scheduleNext());
     };
-
-    function scheduleNext() {
-        // 200ms = 5 FPS, stačí pro náhled a šetří data
-        setTimeout(loop, 200);
-    }
-
+    function scheduleNext() { setTimeout(loop, 200); }
     loop();
 }
 
-// Funkce pro čekání na nový soubor
 function waitForNewFile(dir, afterTime, timeoutMs) {
     return new Promise((resolve, reject) => {
         const interval = 500;
         let elapsed = 0;
-
         const check = () => {
-            // Najdeme nejnovější soubor
             fs.readdir(dir, (err, files) => {
                 if (err) return;
-
-                // Filtrujeme jen obrázky (bez dočasných souborů)
                 const images = files.filter(f => {
                     const low = f.toLowerCase();
                     return (low.endsWith('.jpg') || low.endsWith('.png')) && !low.includes('.tmp');
                 });
-
                 for (const file of images) {
                     const filePath = path.join(dir, file);
                     try {
                         const stats = fs.statSync(filePath);
-                        // Pokud je soubor novější než začátek focení
-                        // (dáváme malou toleranci -100ms kdyby se časy rozcházely)
-                        if (stats.mtimeMs > (afterTime - 100)) {
-                            // Počkáme chvilku, ať se dopíše na disk úplně
-                            setTimeout(() => resolve(file), 500);
+                        if (stats.mtimeMs > (afterTime - 500)) { // Větší tolerance
+                            setTimeout(() => resolve(file), 1000); // Počkáme na zápis
                             return;
                         }
                     } catch (e) { }
                 }
-
                 elapsed += interval;
-                if (elapsed >= timeoutMs) {
-                    reject(new Error('Timeout: Fotka se neobjevila (Zkontrolujte nastavení složky v DigiCamControlu!)'));
-                } else {
-                    setTimeout(check, interval);
-                }
+                if (elapsed >= timeoutMs) reject(new Error('Timeout: Fotka se neobjevila. Zkontrolujte Session Settings v DigiCamControl!'));
+                else setTimeout(check, interval);
             });
         };
         check();
