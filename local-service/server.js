@@ -34,12 +34,10 @@ app.use('/photos', express.static(SAVE_DIR));
 console.log('[INIT] Spouštím Stream Optimizer...');
 const optimizer = spawn('powershell', [
     '-ExecutionPolicy', 'Bypass',
-    // '-WindowStyle', 'Hidden', // Schválně odkrytý pro debugging!
+    // '-WindowStyle', 'Hidden', // Pro debug necháme odkryté
     '-File', path.join(__dirname, 'optimize-stream.ps1')
 ]);
-
 optimizer.on('error', (err) => console.error('[OPTIMIZER] Failed to start:', err));
-optimizer.stdout.on('data', (d) => { /* console.log(`[OPT]: ${d}`); */ });
 optimizer.stderr.on('data', (d) => console.error(`[OPT-ERR]: ${d}`));
 
 app.post('/shoot', async (req, res) => {
@@ -135,8 +133,7 @@ app.post('/print', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`\n📷 FotoBuddy Bridge (ULTRA FAST STREAM + FALLBACK) běží na http://localhost:${PORT}`);
-    console.log(`ℹ️  Optimizer běží na portu 5566 (pokud nespadne)`);
+    console.log(`\n📷 FotoBuddy Bridge (WATCHDOG EDITION) běží na http://localhost:${PORT}`);
     startCloudStream();
     startCommandPolling();
 });
@@ -177,19 +174,27 @@ function startCloudStream() {
     if (isStreaming) return;
     isStreaming = true;
 
-    // FALLBACK LOGIKA: Začínáme s optimalizovaným, když selže, jdeme na RAW
+    // FALLBACK LOGIKA + WATCHDOG
     let currentSource = 'http://127.0.0.1:5566/';
     console.log(`[STREAM] Startuji streamování...`);
 
     const loop = () => {
-        http.get(currentSource, (res) => {
-            // Pokud selže optimalizovaný zdroj, přepneme hned.
+        const req = http.get(currentSource, (res) => {
+
+            // WATCHDOG: Pokud nepřijdou žádná data do 3 sekund, zabijeme to a zkusíme znovu
+            const watchdog = setTimeout(() => {
+                console.warn("[STREAM] Timeout (žádná data), restartuji...");
+                res.destroy(); req.destroy();
+                scheduleNext();
+            }, 3000);
+
             if (res.statusCode !== 200) {
+                clearTimeout(watchdog);
                 res.resume();
                 if (currentSource.includes('5566')) {
-                    console.warn("⚠️  Optimizer (5566) neodpovídá, přepínám na RAW stream (5520)!");
+                    console.warn("⚠️  Optimizer selhal, přepínám na RAW (5520)!");
                     currentSource = 'http://127.0.0.1:5520/liveview.jpg';
-                    return loop(); // Zkusit hned znovu s novým zdrojem
+                    return loop();
                 }
                 return scheduleNext();
             }
@@ -199,14 +204,20 @@ function startCloudStream() {
                 headers: { 'Content-Type': 'image/jpeg', 'Transfer-Encoding': 'chunked' }
             }, (r) => { r.on('data', () => { }); });
 
-            uploadReq.on('error', () => scheduleNext());
+            uploadReq.on('error', () => { }); // Chyba uploadu není kritická pro loop
 
-            // Důležité: Další snímek až po dokončení uploadu tohoto (proti zahlcení)
-            res.on('end', () => scheduleNext());
+            res.on('data', () => { /* data tečou, dobrý */ });
+
+            res.on('end', () => {
+                clearTimeout(watchdog);
+                scheduleNext();
+            });
+
             res.pipe(uploadReq);
 
-        }).on('error', (err) => {
-            // Chyba připojení (Connection refused)
+        });
+
+        req.on('error', (err) => {
             if (currentSource.includes('5566')) {
                 console.warn("⚠️  Chyba spojení s Optimizerem, přepínám na RAW stream (5520)!");
                 currentSource = 'http://127.0.0.1:5520/liveview.jpg';
@@ -218,7 +229,6 @@ function startCloudStream() {
     };
 
     function scheduleNext() {
-        // Pokud jedeme RAW, zpomalíme na 2 FPS, jinak 4 FPS
         const delay = currentSource.includes('5520') ? 500 : (1000 / STREAM_FPS);
         setTimeout(loop, delay);
     }

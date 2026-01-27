@@ -28,14 +28,21 @@ export default function KioskPage() {
     // --- INITIALIZATION & POLLING ---
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            setIsHttps(window.location.protocol === 'https:');
+            const isSecure = window.location.protocol === 'https:';
+            setIsHttps(isSecure);
+
             const savedIp = localStorage.getItem('camera_ip');
             if (savedIp) setCameraIp(savedIp);
-            const savedCloud = localStorage.getItem('use_cloud_stream');
 
+            // AUTOMATIKA: Pokud jsme na HTTPS (Railway), MUSÍME použít Cloud Stream.
+            // Prohlížeč by lokální IP (http://...) stejně zablokoval (Mixed Content).
+            const savedCloud = localStorage.getItem('use_cloud_stream');
             const isRailway = window.location.hostname.includes('railway.app');
-            if (isRailway || savedCloud === 'true') {
+
+            if (isSecure || isRailway || savedCloud === 'true') {
+                console.log("Forcing Cloud Stream due to HTTPS/Railway");
                 setUseCloudStream(true);
+                // Uložíme to, aby to příště naskočilo hned
                 if (isRailway) localStorage.setItem('use_cloud_stream', 'true');
             }
         }
@@ -204,7 +211,16 @@ export default function KioskPage() {
                     <div className="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4">
                         {galleryPhotos.map((photo) => (
                             <div key={photo.id} className="aspect-[3/2] bg-slate-800 rounded-xl overflow-hidden relative group">
-                                <img src={photo.url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" loading="lazy" />
+                                <img
+                                    src={photo.url}
+                                    className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                                    loading="lazy"
+                                    onError={(e) => {
+                                        // Pokud fotka na serveru chybí, skryjeme celý rámeček
+                                        const parent = e.currentTarget.parentElement;
+                                        if (parent) parent.style.display = 'none';
+                                    }}
+                                />
                                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                     <button className="p-3 bg-white text-black rounded-full hover:scale-110 transition-transform" onClick={() => { setLastPhoto(photo.url); setStatus('review'); setShowGallery(false); }}>
                                         <Printer size={20} />
@@ -212,6 +228,7 @@ export default function KioskPage() {
                                 </div>
                             </div>
                         ))}
+                        {galleryPhotos.length === 0 && <div className="col-span-full text-white text-center opacity-50">Žádné fotky.</div>}
                     </div>
                 </div>
             )}
