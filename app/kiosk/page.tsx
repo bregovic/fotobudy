@@ -63,11 +63,11 @@ export default function KioskPage() {
     const takePhoto = async () => {
         console.log("Taking photo...");
         try {
-            // Trigger Bridge
-            const res = await fetch('http://localhost:5555/shoot', { method: 'POST' });
+            // Trigger Bridge (Use 127.0.0.1 explicitly)
+            const res = await fetch('http://127.0.0.1:5555/shoot', { method: 'POST' });
             const data = await res.json();
             if (data.success) {
-                setLastPhoto(`http://localhost:5555${data.url}`);
+                setLastPhoto(`http://127.0.0.1:5555${data.url}`);
                 setStatus('review');
             }
         } catch (e) {
@@ -83,7 +83,7 @@ export default function KioskPage() {
         if (!lastPhoto) return;
         const filename = lastPhoto.split('/').pop();
         try {
-            await fetch('http://localhost:5555/print', {
+            await fetch('http://127.0.0.1:5555/print', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filename })
@@ -103,7 +103,7 @@ export default function KioskPage() {
                     <AlertTriangle size={20} />
                     <div>
                         <b>Používáte HTTPS (Railway)</b><br />
-                        Kamera běží na HTTP (localhost). Pokud tlačítko nereaguje, otevřete stránku přes <a href="http://localhost:3000/kiosk" className="underline font-bold">http://localhost:3000</a>
+                        Kamera běží na HTTP. Pokud to zlobí, otevřete stránku přes <a href="http://127.0.0.1:3000/kiosk" className="underline font-bold">http://localhost:3000</a>
                     </div>
                 </div>
             )}
@@ -114,13 +114,13 @@ export default function KioskPage() {
                     <img src={lastPhoto} className="w-full h-full object-contain bg-slate-900" />
                 ) : (
                     <div className="w-full h-full relative">
-                        {/* Live Stream MJPEG */}
+                        {/* Live Stream MJPEG (Use 127.0.0.1) */}
                         <img
-                            src="http://localhost:5514/live"
+                            src="http://127.0.0.1:5514/live"
                             className="w-full h-full object-cover"
                             onError={(e) => {
-                                // Fallback to static JPG
-                                if (e.currentTarget.src.includes('5514')) e.currentTarget.src = "http://localhost:5513/liveview.jpg";
+                                // Fallback to port 5513
+                                if (e.currentTarget.src.includes('5514')) e.currentTarget.src = "http://127.0.0.1:5513/liveview.jpg";
                                 else e.currentTarget.style.display = 'none';
                             }}
                         />
