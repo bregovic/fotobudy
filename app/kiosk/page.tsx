@@ -109,8 +109,13 @@ export default function KioskPage() {
                     const now = Date.now();
 
                     if ((now - photoTime) < 30000 && photoTime > lastSeenTimeRef.current) {
-                        lastSeenTimeRef.current = photoTime;
-                        processNewPhoto(data.latest.url);
+                        // CRITICAL FIX: Ignorovat fotky, které už jsou upravené (zabrání smyčce)
+                        if (data.latest.url.includes('edited_')) {
+                            lastSeenTimeRef.current = photoTime; // Jen posuneme čas, ale nezpracováváme
+                        } else {
+                            lastSeenTimeRef.current = photoTime;
+                            processNewPhoto(data.latest.url);
+                        }
                     }
                 }
             } catch (e) { }
