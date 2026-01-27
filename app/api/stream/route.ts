@@ -1,40 +1,91 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Ukládáme poslední snímek do paměti serveru
-// Poznámka: Funguje spolehlivě na Railway (stálý server). Na Vercelu (serverless) by to nefungovalo.
-let currentFrame: Buffer | null = null;
-let lastUpdate = 0;
-
-export async function GET(req: NextRequest) {
-    // Mobily si chodí pro tento endpoint, aby viděly obraz
-    if (!currentFrame) {
-        return new NextResponse('No signal', { status: 404 });
-    }
-
-    // Vrátíme obrázek s hlavičkou, aby se neukládal do cache
-    // @ts-ignore - Buffer is compatible at runtime but TS types mismatch in Next.js
-    return new NextResponse(currentFrame, {
-        headers: {
-            'Content-Type': 'image/jpeg',
-            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0',
-            'X-Stream-Age': (Date.now() - lastUpdate).toString()
-        },
-    });
+// Použijeme globální proměnnou pro uložení aktuálního snímku
+// POZOR: Toto funguje jen v prostředí kde běží jeden server instance (což u Hobby Railway plánu platí)
+// V produkčním clusteru by to chtělo Redis/PubSub.
+declare global {
+    var latestFrame: Buffer | null;
+    var frameSubscribers: ((frame: Buffer) => void)[];
 }
 
+if (!global.latestFrame) global.latestFrame = null;
+if (!global.frameSubscribers) global.frameSubscribers = [];
+
+export const dynamic = 'force-dynamic'; // Vypnout cache
+
+// 1. PŘÍJEM DAT Z BRIDGE (POST)
+// Bridge sem posílá "image/jpeg" stream nebo jednotlivé snímky
 export async function POST(req: NextRequest) {
-    // Tvůj lokální počítač sem posílá obrázky
     try {
-        const blob = await req.blob();
-        const buffer = Buffer.from(await blob.arrayBuffer());
+        // Čteme stream dat z requestu
+        const reader = req.body?.getReader();
+        if (!reader) return new NextResponse("No body", { status: 400 });
 
-        currentFrame = buffer;
-        lastUpdate = Date.now();
+        // Jednoduchý parser streamu (Bridge posílá čisté chunky)
+        // Pro jednoduchost budeme předpokládat, že co chunk, to update obrazu.
+        // Správně bychom měli parsovat MJPEG boundary, ale pro latenci to zkusíme "hrubou silou".
 
-        return NextResponse.json({ success: true, size: buffer.length });
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+                // Uložíme nejnovější data (buffer)
+                // Konverze Uint8Array -> Buffer
+                global.latestFrame = Buffer.from(value);
+
+                // Notifikujeme všechny čekající klienty (prohlížeče)
+                // (V této implementaci pro jednoduchost MJPEG streamování uděláme polling nebo long-poll)
+            }
+        }
+
+        return new NextResponse("Stream ended", { status: 200 });
+
     } catch (e: any) {
-        return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+        console.error("Stream error:", e);
+        return new NextResponse(e.message, { status: 500 });
     }
+}
+
+// 2. VYSÍLÁNÍ DO PROHLÍŽEČE (GET)
+// Prohlížeč si žádá o stream. My mu pošleme MJPEG stream.
+export async function GET(req: NextRequest) {
+    const encoder = new TextEncoder();
+
+    // Vytvoříme stream response
+    const stream = new ReadableStream({
+        async start(controller) {
+
+            // Nekonečná smyčka posílání snímků
+            while (true) {
+                try {
+                    const frame = global.latestFrame;
+                    if (frame) {
+                        // MJPEG hlavička pro snímek
+                        const boundary = `\r\n--boundary\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`;
+                        controller.enqueue(encoder.encode(boundary));
+                        controller.enqueue(frame);
+
+                        // Počkáme chvíli (omezíme FPS cca na 15, ať nezatížíme prohlížeč)
+                        await new Promise(r => setTimeout(r, 66));
+                    } else {
+                        // Pokud nemáme frame, pošleme nic nebo placeholder?
+                        // Radši počkáme
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                } catch (e) {
+                    // Klient se odpojil
+                    controller.close();
+                    break;
+                }
+            }
+        }
+    });
+
+    return new NextResponse(stream, {
+        headers: {
+            'Content-Type': 'multipart/x-mixed-replace; boundary=boundary',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+        }
+    });
 }
