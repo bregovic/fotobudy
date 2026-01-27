@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send, Trash2 } from 'lucide-react';
+import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send, Trash2, CameraOff } from 'lucide-react';
 
 const SESSION_ID = 'main';
 const DEFAULT_IP = '127.0.0.1';
@@ -17,7 +17,7 @@ export default function KioskPage() {
     const [showEmailModal, setShowEmailModal] = useState(false);
     const [emailInput, setEmailInput] = useState('');
     const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]);
-    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null); // Pro dvojí potvrzení
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
     const [isHttps, setIsHttps] = useState(false);
 
@@ -27,6 +27,9 @@ export default function KioskPage() {
     const [isConfigured, setIsConfigured] = useState(false);
 
     const lastSeenTimeRef = useRef<number>(0);
+
+    // Stream Handling
+    const [streamError, setStreamError] = useState(false); // Nový stav pro chybu streamu
 
     // Toast Notification System
     const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -151,7 +154,7 @@ export default function KioskPage() {
 
     const openGallery = async () => {
         setShowGallery(true);
-        setConfirmDeleteId(null); // Reset delete state
+        setConfirmDeleteId(null);
         try {
             const res = await fetch('/api/media/list');
             if (!res.ok) throw new Error('Failed to load gallery');
@@ -161,14 +164,13 @@ export default function KioskPage() {
     };
 
     const deletePhoto = async (id: string, url: string, e: React.MouseEvent) => {
-        e.stopPropagation(); // Aby se neotevřel náhled
+        e.stopPropagation();
 
         if (confirmDeleteId !== id) {
-            setConfirmDeleteId(id); // První kliknutí -> "Opravdu?" (Zčervená)
+            setConfirmDeleteId(id);
             return;
         }
 
-        // Druhé kliknutí -> Smazat
         try {
             const res = await fetch('/api/media/delete', {
                 method: 'POST',
@@ -220,6 +222,7 @@ export default function KioskPage() {
         } catch (e) { showToast('Chyba komunikace ❌'); }
     };
 
+    // Live View Polling
     const [liveTick, setLiveTick] = useState(Date.now());
 
     // --- RENDER ---
@@ -235,39 +238,43 @@ export default function KioskPage() {
                 </div>
             )}
 
-            {/* Warning Overlay */}
-            {isHttps && !useCloudStream && cameraIp === '127.0.0.1' && status === 'idle' && (
-                <div className="absolute top-4 left-4 z-40 bg-yellow-100 text-yellow-800 p-3 rounded-xl flex items-center gap-3 text-sm shadow-sm max-w-sm">
-                    <AlertTriangle size={20} />
-                    <div>Zapněte <b>Cloud Stream</b> pro správnou funkci.</div>
-                </div>
-            )}
-
             {/* MAIN LAYER */}
             <div className="absolute inset-0 bg-black flex items-center justify-center">
 
                 {status === 'review' && lastPhoto ? (
                     <img src={lastPhoto} className="w-full h-full object-contain bg-slate-900" />
                 ) : (
-                    <div className="w-full h-full relative overflow-hidden">
+                    <div className="w-full h-full relative overflow-hidden flex items-center justify-center">
+
+                        {/* Placeholder when Stream is Down */}
+                        {streamError && useCloudStream && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500 z-10 bg-slate-900/50">
+                                <CameraOff size={48} className="mb-2 opacity-50" />
+                                <p className="text-sm font-light tracking-wider animate-pulse">Hledám kameru...</p>
+                            </div>
+                        )}
+
                         <img
                             src={!isConfigured ? '' : (useCloudStream ? `/api/stream/snapshot?t=${liveTick}` : `http://${cameraIp}:5521/live`)}
-                            className="w-full h-full object-contain transition-opacity duration-200"
-                            onLoad={() => { if (useCloudStream) setTimeout(() => setLiveTick(Date.now()), 10); }}
+                            className={`w-full h-full object-contain transition-opacity duration-500 ${streamError && useCloudStream ? 'opacity-0' : 'opacity-100'}`}
+                            onLoad={() => {
+                                setStreamError(false); // Obraz se načetl -> jsme online
+                                if (useCloudStream) setTimeout(() => setLiveTick(Date.now()), 10);
+                            }}
                             onError={(e) => {
+                                // Chyba načítání (404)
+                                setStreamError(true);
                                 const target = e.currentTarget;
-                                if (useCloudStream) setTimeout(() => setLiveTick(Date.now()), 500);
+                                if (useCloudStream) setTimeout(() => setLiveTick(Date.now()), 3000); // Počkáme 3s než to zkusíme znovu
                                 else if (target.src.includes('5521')) target.src = `http://${cameraIp}:5520/liveview.jpg`;
                             }}
                         />
-                        <div className="absolute inset-0 -z-10 flex items-center justify-center text-slate-500">
-                            <p>Spojuji se s kamerou...</p>
-                        </div>
                     </div>
                 )}
             </div>
 
-            {/* OVERLAYS */}
+            {/* ... Rest of UI (Overlays, Settings, Dock) ... */}
+
             {status === 'countdown' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-50">
                     <div className="text-[15rem] font-black text-white drop-shadow-2xl animate-bounce">{countdown}</div>
@@ -297,12 +304,7 @@ export default function KioskPage() {
                                 <img src={photo.url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" loading="lazy" onError={(e) => { const parent = e.currentTarget.parentElement; if (parent) parent.style.display = 'none'; }} />
                                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
                                     <button className="p-3 bg-white text-black rounded-full hover:scale-110 transition-transform" onClick={() => { setLastPhoto(photo.url); setStatus('review'); setShowGallery(false); }}><Printer size={20} /></button>
-                                    <button
-                                        className={`p-3 rounded-full hover:scale-110 transition-colors ${confirmDeleteId === photo.id ? 'bg-red-600 text-white animate-pulse' : 'bg-white/20 text-white hover:bg-red-500'}`}
-                                        onClick={(e) => deletePhoto(photo.id, photo.url, e)}
-                                    >
-                                        <Trash2 size={20} />
-                                    </button>
+                                    <button className={`p-3 rounded-full hover:scale-110 transition-colors ${confirmDeleteId === photo.id ? 'bg-red-600 text-white animate-pulse' : 'bg-white/20 text-white hover:bg-red-500'}`} onClick={(e) => deletePhoto(photo.id, photo.url, e)}><Trash2 size={20} /></button>
                                 </div>
                             </div>
                         ))}
