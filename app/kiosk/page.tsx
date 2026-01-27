@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send } from 'lucide-react';
+import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send, Trash2 } from 'lucide-react';
 
 const SESSION_ID = 'main';
 const DEFAULT_IP = '127.0.0.1';
@@ -17,6 +17,7 @@ export default function KioskPage() {
     const [showEmailModal, setShowEmailModal] = useState(false);
     const [emailInput, setEmailInput] = useState('');
     const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]);
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null); // Pro dvojí potvrzení
 
     const [isHttps, setIsHttps] = useState(false);
 
@@ -150,12 +151,37 @@ export default function KioskPage() {
 
     const openGallery = async () => {
         setShowGallery(true);
+        setConfirmDeleteId(null); // Reset delete state
         try {
             const res = await fetch('/api/media/list');
             if (!res.ok) throw new Error('Failed to load gallery');
             const data = await res.json();
             if (Array.isArray(data)) setGalleryPhotos(data);
         } catch (e) { console.error(e); }
+    };
+
+    const deletePhoto = async (id: string, url: string, e: React.MouseEvent) => {
+        e.stopPropagation(); // Aby se neotevřel náhled
+
+        if (confirmDeleteId !== id) {
+            setConfirmDeleteId(id); // První kliknutí -> "Opravdu?" (Zčervená)
+            return;
+        }
+
+        // Druhé kliknutí -> Smazat
+        try {
+            const res = await fetch('/api/media/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            if (res.ok) {
+                setGalleryPhotos(prev => prev.filter(p => p.id !== id));
+                showToast('Fotka smazána 🗑️');
+            } else {
+                showToast('Chyba mazání ❌');
+            }
+        } catch (err) { showToast('Chyba komunikace'); }
     };
 
     const printPhoto = async () => {
@@ -176,7 +202,7 @@ export default function KioskPage() {
             showToast('Zadej platný email!');
             return;
         }
-        showToast('Odesílám email... 📨'); // Okamžitá reakce
+        showToast('Odesílám email... 📨');
         try {
             const res = await fetch('/api/email', {
                 method: 'POST',
@@ -191,12 +217,9 @@ export default function KioskPage() {
 
             setShowEmailModal(false);
             setEmailInput('');
-        } catch (e) {
-            showToast('Chyba komunikace ❌');
-        }
+        } catch (e) { showToast('Chyba komunikace ❌'); }
     };
 
-    // Live View Polling
     const [liveTick, setLiveTick] = useState(Date.now());
 
     // --- RENDER ---
@@ -272,8 +295,14 @@ export default function KioskPage() {
                         {galleryPhotos.map((photo) => (
                             <div key={photo.id} className="aspect-[3/2] bg-slate-800 rounded-xl overflow-hidden relative group">
                                 <img src={photo.url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" loading="lazy" onError={(e) => { const parent = e.currentTarget.parentElement; if (parent) parent.style.display = 'none'; }} />
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
                                     <button className="p-3 bg-white text-black rounded-full hover:scale-110 transition-transform" onClick={() => { setLastPhoto(photo.url); setStatus('review'); setShowGallery(false); }}><Printer size={20} /></button>
+                                    <button
+                                        className={`p-3 rounded-full hover:scale-110 transition-colors ${confirmDeleteId === photo.id ? 'bg-red-600 text-white animate-pulse' : 'bg-white/20 text-white hover:bg-red-500'}`}
+                                        onClick={(e) => deletePhoto(photo.id, photo.url, e)}
+                                    >
+                                        <Trash2 size={20} />
+                                    </button>
                                 </div>
                             </div>
                         ))}
@@ -292,18 +321,9 @@ export default function KioskPage() {
                         <div className="space-y-6">
                             <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
                                 <label className="block text-sm text-slate-400 mb-2">Tvůj Email</label>
-                                <input
-                                    type="email"
-                                    value={emailInput}
-                                    onChange={(e) => setEmailInput(e.target.value)}
-                                    placeholder="tvuj@email.cz"
-                                    autoFocus
-                                    className="w-full p-4 bg-slate-950 border border-slate-700 rounded-lg focus:border-indigo-500 outline-none text-white text-lg placeholder-slate-600"
-                                />
+                                <input type="email" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} placeholder="tvuj@email.cz" autoFocus className="w-full p-4 bg-slate-950 border border-slate-700 rounded-lg focus:border-indigo-500 outline-none text-white text-lg placeholder-slate-600" />
                             </div>
-                            <button onClick={sendEmail} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
-                                <Send size={24} /> Odeslat fotku
-                            </button>
+                            <button onClick={sendEmail} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-lg flex items-center justify-center gap-2 active:scale-95"><Send size={24} /> Odeslat fotku</button>
                         </div>
                     </div>
                 </div>
