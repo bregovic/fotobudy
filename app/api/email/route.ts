@@ -4,38 +4,53 @@ import nodemailer from 'nodemailer';
 
 export async function POST(req: NextRequest) {
     try {
-        const { email, photoUrl, smtpConfig: clientConfig } = await req.json();
+        const body = await req.json();
+        const { email, photoUrl, smtpConfig: clientConfig, isTest } = body; // isTest flag
 
-        if (!email || !photoUrl) {
-            return NextResponse.json({ error: 'Chybí email nebo fotka' }, { status: 400 });
+        if (!email) {
+            return NextResponse.json({ error: 'Chybí email' }, { status: 400 });
         }
 
-        // 1. Získání fotky z DB
-        const filename = photoUrl.split('/').pop();
-        const media = (await prisma.media.findFirst({
-            where: { url: { endsWith: filename } }
-        })) as any;
+        // 1. Získání fotky z DB (pokud to není jen test bez fotky)
+        let media = null;
+        let filename = 'foto.jpg';
 
-        if (!media || !media.data) {
-            console.error('Fotka nenalezena v DB, nelze odeslat prílohu.');
+        if (photoUrl) {
+            filename = photoUrl.split('/').pop();
+            media = (await prisma.media.findFirst({
+                where: { url: { endsWith: filename } }
+            })) as any;
+
+            // Pokud není v Media, zkus Asset (Backgrounds etc)
+            if (!media) {
+                media = await prisma.asset.findFirst({ where: { url: { endsWith: filename } } });
+            }
+        }
+
+        if (!isTest && (!media || !media.data)) {
+            console.error('Fotka nenalezena v DB.');
             return NextResponse.json({ error: 'Fotka nenalezena' }, { status: 404 });
         }
 
         // 2a. Načtení nastavení emailu (Subject/Body)
         const templateSetting = await prisma.setting.findUnique({ where: { key: 'email_template' } });
         let subject = 'Tvoje fotka z FotoBuddy! 🥳';
-        let body = 'Ahoj! Tady je tvoje fotka z akce. Užij si ji!';
+        let bodyText = 'Ahoj! Tady je tvoje fotka z akce. Užij si ji!';
 
         if (templateSetting) {
             try {
                 const tpl = JSON.parse(templateSetting.value);
                 if (tpl.subject) subject = tpl.subject;
-                if (tpl.body) body = tpl.body;
+                if (tpl.body) bodyText = tpl.body;
             } catch { }
         }
 
+        if (isTest) {
+            subject = "[TEST] " + subject;
+            bodyText = "Toto je zkušební email z nastavení.\n\n" + bodyText;
+        }
+
         // 2b. Nastavení SMTP (Pošťák)
-        // Priorita: 1. DB, 2. Klient (Legacy), 3. ENV
         let transportConfig = null;
         let fromEmail = 'fotobuddy@example.com';
 
@@ -45,32 +60,27 @@ export async function POST(req: NextRequest) {
             try { dbSmtp = JSON.parse(dbSetting.value); } catch { }
         }
 
-        if (dbSmtp && dbSmtp.host && dbSmtp.user) {
-            transportConfig = {
-                host: dbSmtp.host,
-                port: Number(dbSmtp.port) || 587,
-                secure: false,
-                auth: { user: dbSmtp.user, pass: dbSmtp.pass },
+        // Helper pro vytvoření transportu
+        const createConfig = (conf: any) => {
+            const port = Number(conf.port) || 587;
+            return {
+                host: conf.host,
+                port: port,
+                secure: port === 465, // True pro 465, false pro ostatní
+                auth: { user: conf.user, pass: conf.pass },
+                tls: {
+                    rejectUnauthorized: false // Ignorovat chyby certifikátů (časté u hostingů)
+                }
             };
+        };
+
+        if (dbSmtp && dbSmtp.host && dbSmtp.user) {
+            transportConfig = createConfig(dbSmtp);
             fromEmail = dbSmtp.user;
         }
         else if (clientConfig && clientConfig.host) {
-            transportConfig = {
-                host: clientConfig.host,
-                port: Number(clientConfig.port) || 587,
-                secure: false,
-                auth: { user: clientConfig.user, pass: clientConfig.pass },
-            };
+            transportConfig = createConfig(clientConfig);
             fromEmail = clientConfig.user;
-        }
-        else if (process.env.SMTP_HOST) {
-            transportConfig = {
-                host: process.env.SMTP_HOST,
-                port: Number(process.env.SMTP_PORT) || 587,
-                secure: false,
-                auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-            };
-            fromEmail = process.env.SMTP_USER || 'fotobuddy@example.com';
         }
 
         if (!transportConfig) {
@@ -80,32 +90,46 @@ export async function POST(req: NextRequest) {
 
         const transporter = nodemailer.createTransport(transportConfig);
 
+        // Ověření spojení (Verify) - dobré pro debugging
+        try {
+            await transporter.verify();
+            console.log("SMTP spojení OK");
+        } catch (verifyErr) {
+            console.error("SMTP Verify Chyba:", verifyErr);
+            return NextResponse.json({ error: 'Chyba připojení k SMTP serveru. Zkontrolujte heslo/port.' }, { status: 500 });
+        }
+
         // 3. Odeslání
-        await transporter.sendMail({
+        const mailOptions: any = {
             from: `"FotoBuddy 📸" <${fromEmail}>`,
             to: email,
             subject: subject,
-            text: body, // Plain text verze
+            text: bodyText,
             html: `
                 <div style="font-family: sans-serif; text-align: center; padding: 20px; background-color: #f8fafc; border-radius: 10px;">
                     <h1 style="color: #333;">📸 ${subject}</h1>
-                    <p style="font-size: 16px; color: #555;">${body.replace(/\n/g, '<br>')}</p>
+                    <p style="font-size: 16px; color: #555;">${bodyText.replace(/\n/g, '<br>')}</p>
                     <div style="margin-top: 20px;">
+                        ${!isTest ? '<i>(Fotka je v příloze)</i>' : '<i>(Toto je test bez fotky)</i>'}
                     </div>
                      <p style="font-size: 12px; color: #888; margin-top: 30px;">Odesláno z FotoBuddy</p>
                 </div>
-            `,
-            attachments: [{
+            `
+        };
+
+        if (!isTest && media && media.data) {
+            mailOptions.attachments = [{
                 filename: filename || 'foto.jpg',
-                content: media.data,
-                // cid: 'photo' // Zrušil jsem CID, protože některým klientům to dělá problémy. Lepší poslat jako klasickou přílohu.
-            }],
-        });
+                content: media.data
+            }];
+        }
+
+        await transporter.sendMail(mailOptions);
 
         return NextResponse.json({ success: true });
 
     } catch (e: any) {
         console.error('Email error:', e);
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return NextResponse.json({ error: e.message || 'Neznámá chyba odesílání' }, { status: 500 });
     }
 }

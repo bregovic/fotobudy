@@ -84,7 +84,7 @@ export default function ProfilePage() {
             const res = await fetch('/api/assets', { method: 'POST', body: formData });
             const data = await res.json();
             if (data.success) {
-                fetchAssets(); // Refresh list
+                fetchAssets();
                 alert('Nahráno! ✅');
             } else {
                 alert('Chyba nahrávání! ❌');
@@ -113,7 +113,7 @@ export default function ProfilePage() {
         }
     };
 
-    const handleSave = async () => {
+    const handleSave = async (silent = false) => {
         setLoading(true);
         const settings = {
             smtp_config: {
@@ -136,12 +136,40 @@ export default function ProfilePage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(settings)
             });
-            alert('Nastavení uloženo do databáze! ✅');
-        } catch (e) {
-            alert('Chyba ukládání!');
-        } finally {
+            if (!silent) alert('Nastavení uloženo do databáze! ✅');
             setLoading(false);
+            return true;
+        } catch (e) {
+            if (!silent) alert('Chyba ukládání!');
+            setLoading(false);
+            return false;
         }
+    };
+
+    const handleTestEmail = async () => {
+        if (!smtpUser.includes('@')) { alert('Vyplňte správně email uživatele (bude použit jako odesílatel i příjemce testu).'); return; }
+
+        // 1. Uložit aktuální nastavení
+        const saved = await handleSave(true);
+        if (!saved) return;
+
+        // 2. Odeslat test
+        if (!confirm(`Nastavení uloženo.\nTeď odešlu testovací email na: ${smtpUser}\nPokračovat?`)) return;
+
+        try {
+            const res = await fetch('/api/email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: smtpUser, isTest: true })
+            });
+            const d = await res.json();
+
+            if (d.success) {
+                alert('✅ Test úspěšný!\nZkontrolujte svou schránku (i SPAM).');
+            } else {
+                alert('❌ Chyba odesílání:\n' + d.error);
+            }
+        } catch (e) { alert('Chyba komunikace se serverem.'); }
     };
 
     const handleLogout = () => {
@@ -277,7 +305,12 @@ export default function ProfilePage() {
 
                 {/* SMTP Section */}
                 <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-emerald-400 border-b border-emerald-500/30 pb-2">📧 Email & SMTP (Server)</h3>
+                    <div className="flex items-center justify-between border-b border-emerald-500/30 pb-2">
+                        <h3 className="text-lg font-semibold text-emerald-400">📧 Email & SMTP</h3>
+                        <button onClick={handleTestEmail} className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs rounded border border-slate-600 transition-colors">
+                            Odeslat test ⚡
+                        </button>
+                    </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="md:col-span-2">
@@ -317,13 +350,12 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="pt-6 border-t border-slate-800">
-                    <button onClick={handleSave} disabled={loading} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-xl font-bold text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/20 transition-all">
+                    <button onClick={() => handleSave(false)} disabled={loading} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-xl font-bold text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/20 transition-all">
                         {loading ? <RefreshCw className="animate-spin" /> : <Save size={20} />}
                         {loading ? 'Ukládám...' : 'Uložit nastavení'}
                     </button>
                     <p className="text-center text-xs text-slate-500 mt-4">
-                        Nastavení se ukládá do cloud databáze. <br />
-                        Bude dostupné na všech zařízeních.
+                        Nastavení se ukládá do cloud databáze.
                     </p>
                 </div>
 
