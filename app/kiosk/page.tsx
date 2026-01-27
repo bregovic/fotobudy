@@ -35,7 +35,7 @@ export default function KioskPage() {
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
     // Dropper State
-    const [is pickingColor, setIsPickingColor] = useState(false);
+    const [isPickingColor, setIsPickingColor] = useState(false);
 
     // Session Settings (User Configurable)
     const [sessionSettings, setSessionSettings] = useState<SessionSettings>({
@@ -222,7 +222,7 @@ export default function KioskPage() {
 
     // --- PIPETTE TOOL ---
     const handlePreviewClick = (e: React.MouseEvent<HTMLImageElement>) => {
-        if (!is pickingColor) return;
+        if (!isPickingColor) return;
 
         const img = e.currentTarget;
         const canvas = document.createElement('canvas');
@@ -357,68 +357,67 @@ export default function KioskPage() {
                                         <img
                                             src={streamUrl}
                                             crossOrigin="anonymous"
-                                            className={`w-full h-full object-cover ${is pickingColor ? 'cursor-crosshair' : ''}`}
-                                        onClick={handlePreviewClick}
+                                            className={`w-full h-full object-cover ${isPickingColor ? 'cursor-crosshair' : ''}`}
+                                            onClick={handlePreviewClick}
                                         />
-                                        {is pickingColor && (
-                                        <div className="absolute inset-0 bg-green-500/20 pointer-events-none flex items-center justify-center text-green-300 font-bold border-4 border-green-500 animate-pulse">
-                                            KLIKNI KAMKOLIV
-                                        </div>
+                                        {isPickingColor && (
+                                            <div className="absolute inset-0 bg-green-500/20 pointer-events-none flex items-center justify-center text-green-300 font-bold border-4 border-green-500 animate-pulse">
+                                                KLIKNI KAMKOLIV
+                                            </div>
                                         )}
                                         <div className="absolute bottom-2 right-2">
                                             <button
-                                                onClick={() => setIsPickingColor(!is pickingColor)}
-                                                className={`p-2 rounded-full shadow-lg flex items-center gap-2 text-xs font-bold transition-all ${is pickingColor ? 'bg-green-500 text-black scale-110' : 'bg-white text-black hover:bg-slate-200'}`}
+                                                onClick={() => setIsPickingColor(!isPickingColor)}
+                                                className={`p-2 rounded-full shadow-lg flex items-center gap-2 text-xs font-bold transition-all ${isPickingColor ? 'bg-green-500 text-black scale-110' : 'bg-white text-black hover:bg-slate-200'}`}
                                             >
-                                            <MousePointer2 size={16} /> {is pickingColor ? 'Vybírám...' : 'Kapátko'}
-                                        </button>
+                                                <MousePointer2 size={16} /> {isPickingColor ? 'Vybírám...' : 'Kapátko'}
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
 
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <span>Barva</span>
-                                        <div className="flex items-center gap-2">
-                                            <input type="color" value={sessionSettings.chromaKeyColor} onChange={e => setSessionSettings({ ...sessionSettings, chromaKeyColor: e.target.value })} className="bg-transparent border-0 w-8 h-8 cursor-pointer" />
-                                            <span className="text-xs font-mono">{sessionSettings.chromaKeyColor}</span>
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <span>Barva</span>
+                                            <div className="flex items-center gap-2">
+                                                <input type="color" value={sessionSettings.chromaKeyColor} onChange={e => setSessionSettings({ ...sessionSettings, chromaKeyColor: e.target.value })} className="bg-transparent border-0 w-8 h-8 cursor-pointer" />
+                                                <span className="text-xs font-mono">{sessionSettings.chromaKeyColor}</span>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div>
-                                        <div className="flex justify-between text-sm mb-1">
-                                            <span>Tolerance</span>
-                                            <span>{sessionSettings.chromaTolerance}</span>
+                                        <div>
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span>Tolerance</span>
+                                                <span>{sessionSettings.chromaTolerance}</span>
+                                            </div>
+                                            <input type="range" min="10" max="250" value={sessionSettings.chromaTolerance} onChange={e => setSessionSettings({ ...sessionSettings, chromaTolerance: Number(e.target.value) })} className="w-full accent-green-500" />
                                         </div>
-                                        <input type="range" min="10" max="250" value={sessionSettings.chromaTolerance} onChange={e => setSessionSettings({ ...sessionSettings, chromaTolerance: Number(e.target.value) })} className="w-full accent-green-500" />
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                        {/* Graphic Selection (Backgrounds & Stickers) */}
-                        <div className="space-y-6">
-                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
-                                <h3 className="font-semibold mb-4 text-green-400">🖼️ Pozadí</h3>
-                                <div className="grid grid-cols-3 gap-2">
-                                    <div onClick={() => setSessionSettings({ ...sessionSettings, selectedBg: null })} className={`aspect-video bg-slate-900 border-2 rounded cursor-pointer flex items-center justify-center text-xs ${sessionSettings.selectedBg === null ? 'border-green-500' : 'border-transparent'}`}>Nic</div>
-                                    {assets.filter(a => a.type === 'BACKGROUND').map(a => (<img key={a.id} src={a.url} onClick={() => setSessionSettings({ ...sessionSettings, selectedBg: a.url })} className={`w-full aspect-video object-cover rounded cursor-pointer border-2 ${sessionSettings.selectedBg === a.url ? 'border-green-500' : 'border-transparent'}`} />))}
+                            {/* Graphic Selection (Backgrounds & Stickers) */}
+                            <div className="space-y-6">
+                                <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
+                                    <h3 className="font-semibold mb-4 text-green-400">🖼️ Pozadí</h3>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <div onClick={() => setSessionSettings({ ...sessionSettings, selectedBg: null })} className={`aspect-video bg-slate-900 border-2 rounded cursor-pointer flex items-center justify-center text-xs ${sessionSettings.selectedBg === null ? 'border-green-500' : 'border-transparent'}`}>Nic</div>
+                                        {assets.filter(a => a.type === 'BACKGROUND').map(a => (<img key={a.id} src={a.url} onClick={() => setSessionSettings({ ...sessionSettings, selectedBg: a.url })} className={`w-full aspect-video object-cover rounded cursor-pointer border-2 ${sessionSettings.selectedBg === a.url ? 'border-green-500' : 'border-transparent'}`} />))}
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
-                                <h3 className="font-semibold mb-4 text-pink-400">🦄 Samolepka</h3>
-                                <div className="grid grid-cols-4 gap-2">
-                                    <div onClick={() => setSessionSettings({ ...sessionSettings, selectedSticker: null })} className={`aspect-square bg-slate-900 border-2 rounded cursor-pointer flex items-center justify-center text-xs ${sessionSettings.selectedSticker === null ? 'border-pink-500' : 'border-transparent'}`}>Nic</div>
-                                    {assets.filter(a => a.type === 'STICKER').map(a => (<img key={a.id} src={a.url} onClick={() => setSessionSettings({ ...sessionSettings, selectedSticker: a.url })} className={`w-full aspect-square object-contain bg-slate-900 rounded cursor-pointer border-2 ${sessionSettings.selectedSticker === a.url ? 'border-pink-500' : 'border-transparent'}`} />))}
+                                <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
+                                    <h3 className="font-semibold mb-4 text-pink-400">🦄 Samolepka</h3>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        <div onClick={() => setSessionSettings({ ...sessionSettings, selectedSticker: null })} className={`aspect-square bg-slate-900 border-2 rounded cursor-pointer flex items-center justify-center text-xs ${sessionSettings.selectedSticker === null ? 'border-pink-500' : 'border-transparent'}`}>Nic</div>
+                                        {assets.filter(a => a.type === 'STICKER').map(a => (<img key={a.id} src={a.url} onClick={() => setSessionSettings({ ...sessionSettings, selectedSticker: a.url })} className={`w-full aspect-square object-contain bg-slate-900 rounded cursor-pointer border-2 ${sessionSettings.selectedSticker === a.url ? 'border-pink-500' : 'border-transparent'}`} />))}
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-                </div>
-    )
-}
+            )}
 
-{/* DOCK */ }
+            {/* DOCK */}
             <div className="absolute top-4 left-4 z-50">
-                 <Link href="/" className="p-3 bg-white/10 text-white rounded-full backdrop-blur-md flex items-center justify-center hover:bg-white/20"><Home size={24} /></Link>
+                <Link href="/" className="p-3 bg-white/10 text-white rounded-full backdrop-blur-md flex items-center justify-center hover:bg-white/20"><Home size={24} /></Link>
             </div>
             <div className="absolute bottom-10 z-30 w-full flex justify-center p-4">
                 <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-full p-4 flex items-center shadow-2xl">
@@ -433,36 +432,32 @@ export default function KioskPage() {
                             <button className="w-24 h-24 rounded-full border-4 border-white flex items-center justify-center bg-white/20 hover:bg-white/30" onClick={startCountdown} disabled={status !== 'idle'}><div className="w-16 h-16 bg-white rounded-full"></div></button>
                         )}
                     </div>
-                     <div className="flex gap-4 px-4">
+                    <div className="flex gap-4 px-4">
                         <button className="flex flex-col items-center gap-1 text-white opacity-80 hover:scale-110 transition-all text-xs" disabled={status !== 'review'} onClick={printPhoto}><Printer size={20} /> <span>Tisk</span></button>
                         <button className="flex flex-col items-center gap-1 text-white opacity-80 hover:scale-110 transition-all text-xs" disabled={status !== 'review'} onClick={() => setShowEmailModal(true)}><Mail size={20} /> <span>Email</span></button>
                     </div>
                 </div>
             </div>
-{ toastMessage && <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[60] bg-black/80 text-white px-6 py-3 rounded-full">{toastMessage}</div> }
+            {toastMessage && <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[60] bg-black/80 text-white px-6 py-3 rounded-full">{toastMessage}</div>}
 
-{/* Gallery & Email Modals */ }
-{
-    showGallery && (
-        <div className="absolute inset-0 z-50 bg-black/90 flex flex-col p-8">
-            <button onClick={() => setShowGallery(false)} className="absolute top-4 right-4 p-4 text-white"><X size={32} /></button>
-            <div className="grid grid-cols-4 gap-4 overflow-y-auto mt-10">
-                {galleryPhotos.map(p => <img key={p.id} src={p.url} onClick={() => { setLastPhoto(p.url); setStatus('review'); setShowGallery(false); }} className="bg-slate-800" />)}
-            </div>
+            {/* Gallery & Email Modals */}
+            {showGallery && (
+                <div className="absolute inset-0 z-50 bg-black/90 flex flex-col p-8">
+                    <button onClick={() => setShowGallery(false)} className="absolute top-4 right-4 p-4 text-white"><X size={32} /></button>
+                    <div className="grid grid-cols-4 gap-4 overflow-y-auto mt-10">
+                        {galleryPhotos.map(p => <img key={p.id} src={p.url} onClick={() => { setLastPhoto(p.url); setStatus('review'); setShowGallery(false); }} className="bg-slate-800" />)}
+                    </div>
+                </div>
+            )}
+            {showEmailModal && (
+                <div className="absolute inset-0 z-50 bg-black/60 flex items-center justify-center p-8">
+                    <div className="bg-slate-900 p-8 rounded-xl w-full max-w-md space-y-4">
+                        <input type="email" value={emailInput} onChange={e => setEmailInput(e.target.value)} placeholder="Email" className="w-full p-4 rounded text-black" />
+                        <button onClick={sendEmail} className="w-full bg-indigo-600 p-4 rounded text-white font-bold">Odeslat</button>
+                        <button onClick={() => setShowEmailModal(false)} className="w-full text-slate-400">Zrušit</button>
+                    </div>
+                </div>
+            )}
         </div>
-    )
-}
-{
-    showEmailModal && (
-        <div className="absolute inset-0 z-50 bg-black/60 flex items-center justify-center p-8">
-            <div className="bg-slate-900 p-8 rounded-xl w-full max-w-md space-y-4">
-                <input type="email" value={emailInput} onChange={e => setEmailInput(e.target.value)} placeholder="Email" className="w-full p-4 rounded text-black" />
-                <button onClick={sendEmail} className="w-full bg-indigo-600 p-4 rounded text-white font-bold">Odeslat</button>
-                <button onClick={() => setShowEmailModal(false)} className="w-full text-slate-400">Zrušit</button>
-            </div>
-        </div>
-    )
-}
-        </div >
     );
 }
