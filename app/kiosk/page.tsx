@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Camera, Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X } from 'lucide-react';
+import { Camera, Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle } from 'lucide-react';
 
 const SESSION_ID = 'main';
 
@@ -10,36 +10,40 @@ export default function KioskPage() {
     const [lastPhoto, setLastPhoto] = useState<string | null>(null);
     const processingRef = useRef(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [isHttps, setIsHttps] = useState(false);
 
     // Auto-init logic
     useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setIsHttps(window.location.protocol === 'https:');
+        }
+
         fetch('/api/session', {
             method: 'POST',
             body: JSON.stringify({ id: SESSION_ID }),
         }).catch(console.error);
 
-        // Polling loop to keep existing remote functionality working if someone scans QR
+        // Polling loop
         const interval = setInterval(async () => {
+            // Pokud běží odpočet nebo se fotí, neptáme se serveru
             if (processingRef.current || status !== 'idle') return;
+
             try {
-                // We can check if status is idle before checking for new triggers
-                // But we need to use ref for status or ignore
-                // For now, simpler:
                 const res = await fetch(`/api/poll?sessionId=${SESSION_ID}`);
                 const data = await res.json();
                 if (data.pending) {
-                    // Must trigger state update carefully
+                    console.log("Remote trigger received!");
                     startCountdown();
                 }
             } catch (e) { }
         }, 1000);
         return () => clearInterval(interval);
-    }, [status]); // Add status to dep to avoid race conditions with polling
+    }, [status]);
 
     const startCountdown = () => {
-        // Prevent double trigger
+        console.log("Starting countdown...");
         if (processingRef.current) return;
-        processingRef.current = true; // Temporary lock
+        processingRef.current = true;
 
         setStatus('countdown');
         let count = 3;
@@ -57,6 +61,7 @@ export default function KioskPage() {
     };
 
     const takePhoto = async () => {
+        console.log("Taking photo...");
         try {
             // Trigger Bridge
             const res = await fetch('http://localhost:5555/shoot', { method: 'POST' });
@@ -66,7 +71,8 @@ export default function KioskPage() {
                 setStatus('review');
             }
         } catch (e) {
-            alert('Nepodařilo se spojit s kamerou. Běží "node local-service/server.js"?');
+            console.error(e);
+            alert('Nepodařilo se spojit s kamerou. Ujistěte se, že:\n1. Běží node local-service/server.js\n2. Pokud jste na HTTPS, povolili jste "Nezabezpečený obsah".');
             setStatus('idle');
         } finally {
             processingRef.current = false;
@@ -90,6 +96,17 @@ export default function KioskPage() {
 
     return (
         <div className="relative w-full h-full bg-gray-100 overflow-hidden flex flex-col items-center justify-center">
+
+            {/* HTTPS Warning Overlay */}
+            {isHttps && status === 'idle' && (
+                <div className="absolute top-4 left-4 z-40 bg-yellow-100 text-yellow-800 p-3 rounded-xl flex items-center gap-3 text-sm shadow-sm max-w-sm">
+                    <AlertTriangle size={20} />
+                    <div>
+                        <b>Používáte HTTPS (Railway)</b><br />
+                        Kamera běží na HTTP (localhost). Pokud tlačítko nereaguje, otevřete stránku přes <a href="http://localhost:3000/kiosk" className="underline font-bold">http://localhost:3000</a>
+                    </div>
+                </div>
+            )}
 
             {/* 1. LAYER: MAIN CONTENT (Live View or Photo) */}
             <div className="absolute inset-0 bg-black">
@@ -164,14 +181,20 @@ export default function KioskPage() {
                         </button>
                     </div>
 
-                    {/* Center Trigger */}
+                    {/* Center Trigger with active effect */}
                     <div className="mx-4">
                         {status === 'review' ? (
                             <button className="shutter-btn" onClick={() => { setStatus('idle'); processingRef.current = false; }} style={{ borderColor: '#ef4444' }}>
                                 <RefreshCw size={32} color="#ef4444" />
                             </button>
                         ) : (
-                            <button className="shutter-btn" onClick={startCountdown}>
+                            <button
+                                className="shutter-btn transform active:scale-90 transition-transform duration-100"
+                                onClick={() => {
+                                    console.log("Shutter clicked!");
+                                    startCountdown();
+                                }}
+                            >
                                 <div className="shutter-inner"></div>
                             </button>
                         )}
