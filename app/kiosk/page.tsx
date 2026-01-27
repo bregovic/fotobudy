@@ -1,167 +1,207 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
+import { Camera, Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X } from 'lucide-react';
 
-// Používáme jednu globální session
 const SESSION_ID = 'main';
 
 export default function KioskPage() {
-    const [remoteUrl, setRemoteUrl] = useState('');
-    const [status, setStatus] = useState<'idle' | 'countdown' | 'capturing' | 'review'>('idle');
+    const [status, setStatus] = useState<'idle' | 'countdown' | 'review'>('idle');
     const [countdown, setCountdown] = useState(3);
     const [lastPhoto, setLastPhoto] = useState<string | null>(null);
     const processingRef = useRef(false);
+    const [showSettings, setShowSettings] = useState(false);
 
+    // Auto-init logic
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const url = new URL(window.location.origin);
-            url.pathname = '/remote';
-            setRemoteUrl(url.toString());
-        }
-
         fetch('/api/session', {
             method: 'POST',
             body: JSON.stringify({ id: SESSION_ID }),
-        }).catch(err => console.error('Session reg failed', err));
+        }).catch(console.error);
 
+        // Polling loop to keep existing remote functionality working if someone scans QR
         const interval = setInterval(async () => {
-            if (processingRef.current) return;
-
+            if (processingRef.current || status !== 'idle') return;
             try {
+                // We can check if status is idle before checking for new triggers
+                // But we need to use ref for status or ignore
+                // For now, simpler:
                 const res = await fetch(`/api/poll?sessionId=${SESSION_ID}`);
                 const data = await res.json();
-
-                if (data.pending && data.command) {
-                    processingRef.current = true;
-
-                    // 1. Spustit odpočet
-                    setStatus('countdown');
-                    let count = 3;
-                    setCountdown(count);
-
-                    const countTimer = setInterval(() => {
-                        count--;
-                        setCountdown(count);
-                        if (count === 0) {
-                            clearInterval(countTimer);
-                            performCapture(data.command.id);
-                        }
-                    }, 1000);
+                if (data.pending) {
+                    // Must trigger state update carefully
+                    startCountdown();
                 }
-            } catch (e) {
-                console.error('Poll error', e);
+            } catch (e) { }
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [status]); // Add status to dep to avoid race conditions with polling
+
+    const startCountdown = () => {
+        // Prevent double trigger
+        if (processingRef.current) return;
+        processingRef.current = true; // Temporary lock
+
+        setStatus('countdown');
+        let count = 3;
+        setCountdown(count);
+
+        const timer = setInterval(() => {
+            count--;
+            if (count > 0) {
+                setCountdown(count);
+            } else {
+                clearInterval(timer);
+                takePhoto();
             }
         }, 1000);
+    };
 
-        return () => clearInterval(interval);
-    }, []);
-
-    const performCapture = async (commandId: number) => {
-        setStatus('capturing');
+    const takePhoto = async () => {
         try {
-            const bridgeRes = await fetch('http://localhost:5555/shoot', { method: 'POST' });
-            const bridgeData = await bridgeRes.json();
-
-            if (bridgeData.success) {
-                setLastPhoto(`http://localhost:5555${bridgeData.url}`);
+            // Trigger Bridge
+            const res = await fetch('http://localhost:5555/shoot', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                setLastPhoto(`http://localhost:5555${data.url}`);
                 setStatus('review');
-
-                await fetch('/api/complete', {
-                    method: 'POST',
-                    body: JSON.stringify({ id: commandId, filename: bridgeData.filename })
-                });
-
-                // Zobrazit fotku na 5 sekund, pak zpět na Live View
-                setTimeout(() => {
-                    setStatus('idle');
-                    processingRef.current = false;
-                }, 5000);
             }
         } catch (e) {
-            console.error(e);
+            alert('Nepodařilo se spojit s kamerou. Běží "node local-service/server.js"?');
             setStatus('idle');
+        } finally {
             processingRef.current = false;
-            alert('Chyba spojení s kamerou.');
+        }
+    };
+
+    const printPhoto = async () => {
+        if (!lastPhoto) return;
+        const filename = lastPhoto.split('/').pop();
+        try {
+            await fetch('http://localhost:5555/print', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename })
+            });
+            alert('Odesláno na tiskárnu! 🖨️');
+        } catch (e) {
+            alert('Chyba tisku.');
         }
     };
 
     return (
-        <div className="container" style={{ textAlign: 'center', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '1rem' }}>
+        <div className="relative w-full h-full bg-gray-100 overflow-hidden flex flex-col items-center justify-center">
 
-            {/* Hlavní scéna */}
-            <div style={{ flex: 1, position: 'relative', borderRadius: '24px', overflow: 'hidden', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-
-                {/* 1. LIVE VIEW (DigiCamControl Stream) */}
-                {status === 'idle' || status === 'countdown' ? (
-                    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-                        {/* Live stream z DCC (MJPEG Stream na portu 5514) */}
+            {/* 1. LAYER: MAIN CONTENT (Live View or Photo) */}
+            <div className="absolute inset-0 bg-black">
+                {status === 'review' && lastPhoto ? (
+                    <img src={lastPhoto} className="w-full h-full object-contain bg-slate-900" />
+                ) : (
+                    <div className="w-full h-full relative">
+                        {/* Live Stream MJPEG */}
                         <img
                             src="http://localhost:5514/live"
+                            className="w-full h-full object-cover"
                             onError={(e) => {
-                                // Fallback na port 5513 (Jpg statický)
-                                const target = e.currentTarget;
-                                if (target.src !== 'http://localhost:5513/liveview.jpg') {
-                                    target.src = 'http://localhost:5513/liveview.jpg';
-                                } else {
-                                    target.style.display = 'none';
-                                    target.parentElement!.style.background = '#1e293b';
-                                }
+                                // Fallback to static JPG
+                                if (e.currentTarget.src.includes('5514')) e.currentTarget.src = "http://localhost:5513/liveview.jpg";
+                                else e.currentTarget.style.display = 'none';
                             }}
-                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                         />
-
-                        {/* Fallback text pokud se nenačte obrázek */}
-                        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 0, color: '#64748b', pointerEvents: 'none' }}>
-                            <div style={{ pointerEvents: 'auto' }}> {/* Zapnout pointer events pro QR */}
-                                <p style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>Live View</p>
-                                <p style={{ fontSize: '0.8rem' }}>Pokud nevidíte obraz, zkontrolujte:</p>
-                                <p style={{ fontSize: '0.8rem' }}>1. DigiCamControl běží a kamera je v režimu Live View</p>
-                                <p style={{ fontSize: '0.8rem' }}>2. Webserver je zapnutý (Port 5513/5514)</p>
-                                <p style={{ fontSize: '0.8rem' }}>3. Povolte "Nezabezpečený obsah" (Mixed Content) v prohlížeči</p>
-
-                                <div style={{ marginTop: '2rem' }}>Připojit se:</div>
-                                <div style={{ background: 'white', padding: '1rem', borderRadius: '12px', display: 'inline-block', marginTop: '1rem' }}>
-                                    <QRCodeSVG value={remoteUrl} size={150} />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                ) : null}
-
-                {/* 2. ODPOČET */}
-                {status === 'countdown' && (
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(5px)', zIndex: 10 }}>
-                        <div style={{ fontSize: '15rem', fontWeight: 900, color: 'white', textShadow: '0 0 50px rgba(59, 130, 246, 0.8)', animation: 'ping 1s infinite' }}>
-                            {countdown}
-                        </div>
-                    </div>
-                )}
-
-                {/* 3. FLASH EFFECT */}
-                {status === 'capturing' && (
-                    <div style={{ position: 'absolute', inset: 0, background: 'white', animation: 'fadeOut 0.5s forwards', zIndex: 20 }}></div>
-                )}
-
-                {/* 4. VÝSLEDEK (Review) */}
-                {status === 'review' && lastPhoto && (
-                    <div style={{ width: '100%', height: '100%', position: 'relative', background: '#000', zIndex: 5 }}>
-                        <img src={lastPhoto} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                        <div style={{ position: 'absolute', bottom: '2rem', left: 0, right: 0, textAlign: 'center' }}>
-                            <span className="glass-panel" style={{ padding: '0.5rem 1.5rem', color: 'white', fontSize: '1.2rem' }}>
-                                🎉 Skvělá fotka!
-                            </span>
-                        </div>
                     </div>
                 )}
             </div>
 
-            {/* Spodní info panel - jen když se nic neděje */}
-            {status === 'idle' && (
-                <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', padding: '0 1rem', color: '#64748b', fontSize: '0.9rem' }}>
-                    <span>🔗 {remoteUrl.replace('https://', '').replace('http://', '')}</span>
-                    <span>📷 Canon 5D Mark II</span>
+            {/* 2. LAYER: OVERLAYS */}
+
+            {/* Countdown Overlay */}
+            {status === 'countdown' && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-20">
+                    <div className="text-[15rem] font-black text-white drop-shadow-2xl animate-bounce">
+                        {countdown}
+                    </div>
                 </div>
             )}
+
+            {/* Settings Modal */}
+            {showSettings && (
+                <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-md flex items-center justify-center p-8">
+                    <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-2xl font-bold">Nastavení</h2>
+                            <button onClick={() => setShowSettings(false)}><X /></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="p-4 bg-slate-50 rounded-xl">
+                                <h3 className="font-semibold mb-2">Pozadí</h3>
+                                <div className="flex gap-2">
+                                    {['#fff', '#000', 'linear-gradient(45deg, #ff9a9e 0%, #fad0c4 99%, #fad0c4 100%)'].map((bg, i) => (
+                                        <div key={i} className="w-12 h-12 rounded-full border-2 border-slate-200 cursor-pointer" style={{ background: bg }}></div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="p-4 bg-slate-50 rounded-xl">
+                                <h3 className="font-semibold mb-2">Tiskárna</h3>
+                                <p className="text-sm text-slate-500">Výchozí systémová tiskárna</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 3. LAYER: CONTROLS (Bottom Dock) */}
+            <div className="absolute bottom-8 z-30 w-full flex justify-center p-4">
+                <div className="dock-container">
+
+                    {/* Left Group */}
+                    <div className="flex gap-2">
+                        <button className="icon-btn" onClick={() => setShowSettings(true)}>
+                            <Settings size={24} />
+                            <span>Nastavení</span>
+                        </button>
+                        <button className="icon-btn">
+                            <ImageIcon size={24} />
+                            <span>Galerie</span>
+                        </button>
+                    </div>
+
+                    {/* Center Trigger */}
+                    <div className="mx-4">
+                        {status === 'review' ? (
+                            <button className="shutter-btn" onClick={() => { setStatus('idle'); processingRef.current = false; }} style={{ borderColor: '#ef4444' }}>
+                                <RefreshCw size={32} color="#ef4444" />
+                            </button>
+                        ) : (
+                            <button className="shutter-btn" onClick={startCountdown}>
+                                <div className="shutter-inner"></div>
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Right Group */}
+                    <div className="flex gap-2">
+                        <button
+                            className="icon-btn"
+                            disabled={status !== 'review'}
+                            style={{ opacity: status === 'review' ? 1 : 0.3 }}
+                            onClick={printPhoto}
+                        >
+                            <Printer size={24} />
+                            <span>Tisk</span>
+                        </button>
+                        <button
+                            className="icon-btn"
+                            disabled={status !== 'review'}
+                            style={{ opacity: status === 'review' ? 1 : 0.3 }}
+                            onClick={() => alert('Zatím neimplementováno')}
+                        >
+                            <Mail size={24} />
+                            <span>Email</span>
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
         </div>
     );
 }
