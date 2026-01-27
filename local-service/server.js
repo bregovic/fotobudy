@@ -17,24 +17,21 @@ app.use(express.json());
 const DCC_API_URL = 'http://127.0.0.1:5520/?CMD=Capture';
 const SAVE_DIR = path.join(process.cwd(), 'public', 'photos');
 const CLOUD_API_URL = 'https://cvak.up.railway.app';
-const CLOUD_STREAM_URL = `${CLOUD_API_URL}/api/stream`;
+const SNAPSHOT_API_URL = `${CLOUD_API_URL}/api/stream/snapshot`;
 const CLOUD_UPLOAD_URL = `${CLOUD_API_URL}/api/media/upload`;
 
-const STREAM_FPS = 4;
+// FPS pro Snapshoty
+const SNAPSHOT_FPS = 4;
 
-let isStreaming = false;
 let isCapturing = false;
 
-// Vytvoření složky
 if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true });
-
 app.use('/photos', express.static(SAVE_DIR));
 
 // Spuštění Stream Optimizeru (PowerShell proxy)
 console.log('[INIT] Spouštím Stream Optimizer...');
 const optimizer = spawn('powershell', [
     '-ExecutionPolicy', 'Bypass',
-    // '-WindowStyle', 'Hidden', // Pro debug necháme odkryté
     '-File', path.join(__dirname, 'optimize-stream.ps1')
 ]);
 optimizer.on('error', (err) => console.error('[OPTIMIZER] Failed to start:', err));
@@ -42,47 +39,34 @@ optimizer.stderr.on('data', (d) => console.error(`[OPT-ERR]: ${d}`));
 
 app.post('/shoot', async (req, res) => {
     if (isCapturing) return res.status(429).json({ success: false, error: 'Camera busy' });
-
-    console.log('[BRIDGE] Odesílám HTTP příkaz: Capture');
+    console.log('[BRIDGE] Capture start...');
     isCapturing = true;
     const startTime = Date.now();
-
     try {
         await new Promise((resolve, reject) => {
-            const request = http.get(DCC_API_URL, (response) => {
-                if (response.statusCode < 200 || response.statusCode > 299) reject(new Error(`DigiCamControl status: ${response.statusCode}`));
-                else { response.on('data', () => { }); response.on('end', resolve); }
-            });
-            request.on('error', (err) => reject(new Error(`Chyba spojení s DCC: ${err.message}`)));
+            http.get(DCC_API_URL, (res) => {
+                if (res.statusCode < 200 || res.statusCode > 299) reject(new Error(`DCC Error ${res.statusCode}`));
+                else { res.resume(); resolve(); }
+            }).on('error', reject);
         });
 
-        console.log('[BRIDGE] Trigger OK, čekám na soubor...');
+        console.log('[BRIDGE] Triggered. Waiting for file...');
         const foundFile = await waitForNewFile(SAVE_DIR, startTime, 15000);
-        console.log(`[BRIDGE] Fotka nalezena: ${foundFile}`);
 
-        // OPTIMALIZACE: Resize
-        const shrinkStartTime = Date.now();
+        // Resize & Upload
         let uploadPath = path.join(SAVE_DIR, foundFile);
-
         try {
-            console.log('[BRIDGE] Vytvářím optimalizovaný náhled...');
-            const resizedFilename = `web_${foundFile}`;
-            const resizedPath = path.join(os.tmpdir(), resizedFilename);
+            const resizedPath = path.join(os.tmpdir(), `web_${foundFile}`);
             await resizeImagePowershell(uploadPath, resizedPath, 1200);
             uploadPath = resizedPath;
-        } catch (resizeError) {
-            console.error('[BRIDGE] Chyba zmenšování (použiji originál):', resizeError.message);
-        }
-        console.log(`[BRIDGE] Resize hotov za ${Date.now() - shrinkStartTime}ms`);
+        } catch (e) { console.error('Resize fail', e); }
 
-        // UPLOAD 
         const publicUrl = await uploadToCloud(uploadPath, foundFile);
-        console.log(`[BRIDGE] Fotka nahrána na cloud: ${publicUrl}`);
-
+        console.log(`[BRIDGE] Upload done: ${publicUrl}`);
         res.json({ success: true, filename: foundFile, url: publicUrl });
 
     } catch (e) {
-        console.error(`[CHYBA] ${e.message}`);
+        console.error(`[ERROR] ${e.message}`);
         res.status(500).json({ success: false, error: e.message });
     } finally {
         isCapturing = false;
@@ -124,34 +108,77 @@ function uploadToCloud(filePath, originalFilename) {
     });
 }
 
+// --- SNAPSHOT LOOP (The "Webcam" Logic) ---
+function startSnapshotLoop() {
+    console.log('[SNAPSHOT] Startuji odesílání snímků na Cloud...');
+
+    // Zkusíme nejdřív Optimizer (5566), fallback na RAW (5520)
+    let currentSource = 'http://127.0.0.1:5566/';
+
+    const oneFrame = () => {
+        const req = http.get(currentSource, (res) => {
+            if (res.statusCode !== 200) {
+                res.resume();
+                if (currentSource.includes('5566')) {
+                    // Fallback
+                    currentSource = 'http://127.0.0.1:5520/liveview.jpg';
+                    setTimeout(oneFrame, 100);
+                } else {
+                    setTimeout(oneFrame, 1000); // Wait on error
+                }
+                return;
+            }
+
+            // Stáhneme obrázek do paměti a pošleme na Cloud
+            const chunks = [];
+            res.on('data', c => chunks.push(c));
+            res.on('end', () => {
+                const buffer = Buffer.concat(chunks);
+
+                // POST na Cloud
+                const upload = https.request(SNAPSHOT_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'image/jpeg',
+                        'Content-Length': buffer.length
+                    }
+                }, (upRes) => {
+                    upRes.on('data', () => { }); // Consume
+                    upRes.on('end', () => setTimeout(oneFrame, 1000 / SNAPSHOT_FPS));
+                });
+
+                upload.on('error', () => setTimeout(oneFrame, 500));
+                upload.write(buffer);
+                upload.end();
+            });
+
+        });
+
+        req.on('error', () => {
+            if (currentSource.includes('5566')) {
+                currentSource = 'http://127.0.0.1:5520/liveview.jpg';
+            }
+            setTimeout(oneFrame, 500);
+        });
+    };
+    oneFrame();
+}
+
 app.post('/print', (req, res) => {
     const { filename } = req.body;
-    console.log(`[BRIDGE] Odesílám na tiskárnu: ${filename}`);
-    const printCmd = `mspaint /p "${path.join(SAVE_DIR, filename)}"`;
-    exec(printCmd, (error) => { });
-    res.json({ success: true, message: 'Odesláno na tisk' });
-});
-
-app.listen(PORT, () => {
-    console.log(`\n📷 FotoBuddy Bridge (WATCHDOG EDITION) běží na http://localhost:${PORT}`);
-    startCloudStream();
-    startCommandPolling();
+    exec(`mspaint /p "${path.join(SAVE_DIR, filename)}"`);
+    res.json({ success: true });
 });
 
 function startCommandPolling() {
-    console.log('[CMD] Začínám naslouchat příkazům z cloudu...');
+    console.log('[CMD] Polling commands...');
     const poll = () => {
         https.get(`${CLOUD_API_URL}/api/command`, (res) => {
             let data = ''; res.on('data', c => data += c);
             res.on('end', () => {
                 try {
-                    if (res.statusCode === 200) {
-                        const json = JSON.parse(data);
-                        if (json.command === 'SHOOT' && !isCapturing) {
-                            console.log('[CMD] PŘIJAT PŘÍKAZ SHOOT 🔫');
-                            triggerLocalShoot();
-                        }
-                    }
+                    const json = JSON.parse(data);
+                    if (json.command === 'SHOOT' && !isCapturing) triggerLocalShoot();
                 } catch (e) { }
                 setTimeout(poll, 500);
             });
@@ -170,91 +197,31 @@ async function triggerLocalShoot() {
     req.write(postData); req.end();
 }
 
-function startCloudStream() {
-    if (isStreaming) return;
-    isStreaming = true;
-
-    // FALLBACK LOGIKA + WATCHDOG
-    let currentSource = 'http://127.0.0.1:5566/';
-    console.log(`[STREAM] Startuji streamování...`);
-
-    const loop = () => {
-        const req = http.get(currentSource, (res) => {
-
-            // WATCHDOG: Pokud nepřijdou žádná data do 3 sekund, zabijeme to a zkusíme znovu
-            const watchdog = setTimeout(() => {
-                console.warn("[STREAM] Timeout (žádná data), restartuji...");
-                res.destroy(); req.destroy();
-                scheduleNext();
-            }, 3000);
-
-            if (res.statusCode !== 200) {
-                clearTimeout(watchdog);
-                res.resume();
-                if (currentSource.includes('5566')) {
-                    console.warn("⚠️  Optimizer selhal, přepínám na RAW (5520)!");
-                    currentSource = 'http://127.0.0.1:5520/liveview.jpg';
-                    return loop();
-                }
-                return scheduleNext();
-            }
-
-            const uploadReq = https.request(CLOUD_STREAM_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'image/jpeg', 'Transfer-Encoding': 'chunked' }
-            }, (r) => { r.on('data', () => { }); });
-
-            uploadReq.on('error', () => { }); // Chyba uploadu není kritická pro loop
-
-            res.on('data', () => { /* data tečou, dobrý */ });
-
-            res.on('end', () => {
-                clearTimeout(watchdog);
-                scheduleNext();
-            });
-
-            res.pipe(uploadReq);
-
-        });
-
-        req.on('error', (err) => {
-            if (currentSource.includes('5566')) {
-                console.warn("⚠️  Chyba spojení s Optimizerem, přepínám na RAW stream (5520)!");
-                currentSource = 'http://127.0.0.1:5520/liveview.jpg';
-                setTimeout(loop, 100);
-            } else {
-                scheduleNext();
-            }
-        });
-    };
-
-    function scheduleNext() {
-        const delay = currentSource.includes('5520') ? 500 : (1000 / STREAM_FPS);
-        setTimeout(loop, delay);
-    }
-    loop();
-}
-
 function waitForNewFile(dir, afterTime, timeoutMs) {
     return new Promise((resolve, reject) => {
         const interval = 500; let elapsed = 0;
         const check = () => {
             fs.readdir(dir, (err, files) => {
                 if (err) return;
-                const images = files.filter(f => {
-                    const low = f.toLowerCase(); return (low.endsWith('.jpg') || low.endsWith('.png')) && !low.includes('.tmp');
-                });
+                const images = files.filter(f => f.match(/\.(jpg|png)$/i) && !f.includes('.tmp'));
                 for (const file of images) {
-                    const filePath = path.join(dir, file);
                     try {
-                        const stats = fs.statSync(filePath);
-                        if (stats.mtimeMs > (afterTime - 500)) { setTimeout(() => resolve(file), 1500); return; }
+                        if (fs.statSync(path.join(dir, file)).mtimeMs > (afterTime - 500)) {
+                            setTimeout(() => resolve(file), 1500); return;
+                        }
                     } catch (e) { }
                 }
                 elapsed += interval;
-                if (elapsed >= timeoutMs) reject(new Error('Timeout: Fotka se neobjevila.')); else setTimeout(check, interval);
+                if (elapsed >= timeoutMs) reject(new Error('Timeout')); else setTimeout(check, interval);
             });
         };
         check();
     });
 }
+
+app.listen(PORT, () => {
+    console.log(`\n📷 FotoBuddy Bridge (SNAPSHOT MODE) running on ${PORT}`);
+    console.log(`ℹ️  Posílám statické snímky na Cloud (Webcam Style).`);
+    startSnapshotLoop();
+    startCommandPolling();
+});

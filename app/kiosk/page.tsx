@@ -150,6 +150,14 @@ export default function KioskPage() {
 
     const alerting = (msg: string) => { if (typeof window !== 'undefined') alert(msg); };
 
+    // Live View Polling (300ms) - "Webcam Style"
+    const [liveTick, setLiveTick] = useState(0);
+    useEffect(() => {
+        if (status !== 'idle') return;
+        const interval = setInterval(() => setLiveTick(Date.now()), 250);
+        return () => clearInterval(interval);
+    }, [status]);
+
     // --- RENDER ---
     return (
         <div className="relative w-full h-full bg-gray-100 overflow-hidden flex flex-col items-center justify-center">
@@ -164,28 +172,27 @@ export default function KioskPage() {
 
             {/* MAIN LAYER */}
             <div className="absolute inset-0 bg-black flex items-center justify-center">
+
                 {status === 'review' && lastPhoto ? (
                     <img src={lastPhoto} className="w-full h-full object-contain bg-slate-900" />
                 ) : (
                     <div className="w-full h-full relative overflow-hidden">
-                        {/* Live Stream - s klíčem pro reset DOMu při změně režimu */}
+                        {/* Snapshot Mode (Webcam Style) */}
                         <img
-                            key={useCloudStream ? 'cloud-stream' : 'local-stream'}
-                            src={useCloudStream ? `/api/stream?t=${streamKey}` : `http://${cameraIp}:5521/live`}
-                            className="w-full h-full object-cover"
+                            src={useCloudStream ? `/api/stream/snapshot?t=${liveTick}` : `http://${cameraIp}:5521/live`}
+                            className="w-full h-full object-cover transition-opacity duration-200"
                             onError={(e) => {
+                                // Fallback pro lokální režim (když cloud nejede)
                                 const target = e.currentTarget;
-                                if (useCloudStream) {
-                                    setTimeout(() => setStreamKey(k => k + 1), 2000);
-                                    return;
+                                if (!useCloudStream && target.src.includes('5521')) {
+                                    target.src = `http://${cameraIp}:5520/liveview.jpg`;
                                 }
-                                if (target.src.includes('5521')) target.src = `http://${cameraIp}:5520/liveview.jpg`;
-                                else if (!useCloudStream) target.style.display = 'none';
                             }}
                         />
                         <div className="absolute inset-0 -z-10 flex items-center justify-center text-slate-500">
-                            <p>Načítám obraz...</p>
+                            <p>Spojuji se s kamerou...</p>
                         </div>
+
                         {/* Frame */}
                         <div className="absolute inset-0 border-[20px] border-black/80 pointer-events-none z-10 rounded-[30px] m-4 shadow-2xl"></div>
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30 pointer-events-none z-10"></div>
