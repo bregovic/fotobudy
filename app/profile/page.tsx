@@ -13,12 +13,15 @@ export default function ProfilePage() {
     const [smtpUser, setSmtpUser] = useState('');
     const [smtpPass, setSmtpPass] = useState('');
 
+    // AI Settings
+    const [openAiKey, setOpenAiKey] = useState('');
+
     // Načtení při startu
     useEffect(() => {
-        const saved = localStorage.getItem('smtp_config');
-        if (saved) {
+        const savedSmtp = localStorage.getItem('smtp_config');
+        if (savedSmtp) {
             try {
-                const config = JSON.parse(saved);
+                const config = JSON.parse(savedSmtp);
                 setSmtpHost(config.host || '');
                 setSmtpPort(config.port || '587');
                 setSmtpUser(config.user || '');
@@ -26,7 +29,10 @@ export default function ProfilePage() {
             } catch (e) { }
         }
 
-        // Auto-login if previously verified in session (optional, skipping for now)
+        const savedKey = localStorage.getItem('openai_api_key');
+        if (savedKey) setOpenAiKey(savedKey);
+
+        // Auto-login logic (skipped)
     }, []);
 
     const handleLogin = (e: React.FormEvent) => {
@@ -39,14 +45,16 @@ export default function ProfilePage() {
     };
 
     const handleSave = () => {
-        const config = {
+        const smtpConfig = {
             host: smtpHost,
             port: smtpPort,
             user: smtpUser,
             pass: smtpPass
         };
-        localStorage.setItem('smtp_config', JSON.stringify(config));
-        alert('Nastavení uloženo! ✅\nNyní bude Kiosk používat tento email.');
+        localStorage.setItem('smtp_config', JSON.stringify(smtpConfig));
+        localStorage.setItem('openai_api_key', openAiKey);
+
+        alert('Nastavení uloženo! ✅\nZměny se projeví v Kiosku.');
     };
 
     const handleLogout = () => {
@@ -92,16 +100,17 @@ export default function ProfilePage() {
                     <Home size={20} />
                     <span>Zpět</span>
                 </Link>
-                <h1 className="text-2xl font-bold">Nastavení Emailu</h1>
+                <h1 className="text-2xl font-bold">Nastavení</h1>
                 <button onClick={handleLogout} className="p-3 bg-red-500/20 text-red-400 rounded-full hover:bg-red-500/30">
                     <LogOut size={20} />
                 </button>
             </div>
 
-            <div className="max-w-2xl mx-auto bg-slate-900 p-8 rounded-2xl shadow-xl border border-slate-700 space-y-6">
+            <div className="max-w-2xl mx-auto bg-slate-900 p-8 rounded-2xl shadow-xl border border-slate-700 space-y-8">
 
+                {/* SMTP Section */}
                 <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-slate-400 border-b border-slate-800 pb-2">SMTP Server (Odesílání)</h3>
+                    <h3 className="text-lg font-semibold text-emerald-400 border-b border-emerald-500/30 pb-2">📧 Email & SMTP</h3>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="md:col-span-2">
@@ -122,6 +131,22 @@ export default function ProfilePage() {
                     <div>
                         <label className="block text-sm text-slate-500 mb-1">Heslo (App Password / API Key)</label>
                         <input type="password" value={smtpPass} onChange={(e) => setSmtpPass(e.target.value)} className="w-full p-3 bg-slate-950 rounded-lg border border-slate-700 focus:border-emerald-500 outline-none" placeholder="••••••••" />
+                    </div>
+                </div>
+
+                {/* AI Section */}
+                <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-purple-400 border-b border-purple-500/30 pb-2">🧠 AI Integrace</h3>
+                    <div>
+                        <label className="block text-sm text-slate-500 mb-1">OpenAI API Key</label>
+                        <input
+                            type="password"
+                            value={openAiKey}
+                            onChange={(e) => setOpenAiKey(e.target.value)}
+                            className="w-full p-3 bg-slate-950 rounded-lg border border-slate-700 focus:border-purple-500 outline-none font-mono text-sm"
+                            placeholder="sk-..."
+                        />
+                        <p className="text-xs text-slate-600 mt-2">Klíč se ukládá pouze lokálně v prohlížeči.</p>
                     </div>
                 </div>
 
