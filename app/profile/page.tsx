@@ -165,7 +165,7 @@ export default function ProfilePage() {
             const d = await res.json();
 
             if (d.success) {
-                alert('✅ Test úspěšný!\nZkontrolujte svou schránku (i SPAM).');
+                alert(`✅ Test úspěšný!\nServer odpověděl: ${d.response}\nMessage ID: ${d.messageId}\n\nPokud email nedorazil, zkontrolujte SPAM.`);
             } else {
                 alert('❌ Chyba odesílání:\n' + d.error);
             }

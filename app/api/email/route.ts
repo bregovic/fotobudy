@@ -124,9 +124,14 @@ export async function POST(req: NextRequest) {
             }];
         }
 
-        await transporter.sendMail(mailOptions);
+        const info = await transporter.sendMail(mailOptions);
+        console.log("Email sent info:", info);
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({
+            success: true,
+            messageId: info.messageId,
+            response: info.response
+        });
 
     } catch (e: any) {
         console.error('Email error:', e);
