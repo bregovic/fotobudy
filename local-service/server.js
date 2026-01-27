@@ -1,10 +1,11 @@
 const express = require('express');
 const cors = require('cors');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const http = require('http'); // Pro HTTP requesty
-const https = require('https'); // Pro HTTPS requesty na cloud
+const http = require('http');
+const https = require('https');
+const os = require('os');
 
 const app = express();
 const PORT = 5555;
@@ -15,14 +16,11 @@ app.use(express.json());
 // --- KONFIGURACE ---
 const DCC_API_URL = 'http://127.0.0.1:5520/?CMD=Capture';
 const SAVE_DIR = path.join(process.cwd(), 'public', 'photos');
-const CLOUD_API_URL = 'https://cvak.up.railway.app'; // Základní adresa cloudu
+const CLOUD_API_URL = 'https://cvak.up.railway.app';
 const CLOUD_STREAM_URL = `${CLOUD_API_URL}/api/stream`;
 const CLOUD_UPLOAD_URL = `${CLOUD_API_URL}/api/media/upload`;
 
-// --- EFEKTIVITA A KVALITA ---
-// Počet snímků za sekundu pro cloud stream.
-// 2 FPS je ideální kompromis (šetří data na hotspotu, ale stále je vidět pohyb).
-const STREAM_FPS = 2;
+const STREAM_FPS = 4; // Můžeme si dovolit víc FPS, když jsou obrázky malé!
 
 let isStreaming = false;
 let isCapturing = false;
@@ -34,6 +32,16 @@ if (!fs.existsSync(SAVE_DIR)) {
 
 app.use('/photos', express.static(SAVE_DIR));
 
+// Spuštění Stream Optimizeru (PowerShell proxy)
+console.log('[INIT] Spouštím Stream Optimizer...');
+const optimizer = spawn('powershell', [
+    '-ExecutionPolicy', 'Bypass',
+    '-WindowStyle', 'Hidden', // Schováme okno PS
+    '-File', path.join(__dirname, 'optimize-stream.ps1')
+]);
+optimizer.on('error', (err) => console.error('[OPTIMIZER] Failed to start:', err));
+// optimizer.stdout.on('data', (d) => console.log(`[OPT]: ${d}`)); // Debug log
+
 app.post('/shoot', async (req, res) => {
     if (isCapturing) {
         return res.status(429).json({ success: false, error: 'Camera busy' });
@@ -44,7 +52,6 @@ app.post('/shoot', async (req, res) => {
     const startTime = Date.now();
 
     try {
-        // 1. Spustíme spoušť
         await new Promise((resolve, reject) => {
             const request = http.get(DCC_API_URL, (response) => {
                 if (response.statusCode < 200 || response.statusCode > 299) {
@@ -58,13 +65,26 @@ app.post('/shoot', async (req, res) => {
         });
 
         console.log('[BRIDGE] Trigger OK, čekám na soubor...');
-
-        // 2. Čekáme na soubor (15s timeout)
         const foundFile = await waitForNewFile(SAVE_DIR, startTime, 15000);
         console.log(`[BRIDGE] Fotka nalezena: ${foundFile}`);
 
-        // 3. UPLOAD NA CLOUD
-        const publicUrl = await uploadToCloud(foundFile);
+        // OPTIMALIZACE: Resize
+        const shrinkStartTime = Date.now();
+        let uploadPath = path.join(SAVE_DIR, foundFile);
+
+        try {
+            console.log('[BRIDGE] Vytvářím optimalizovaný náhled...');
+            const resizedFilename = `web_${foundFile}`;
+            const resizedPath = path.join(os.tmpdir(), resizedFilename);
+            await resizeImagePowershell(uploadPath, resizedPath, 1200);
+            uploadPath = resizedPath;
+        } catch (resizeError) {
+            console.error('[BRIDGE] Chyba zmenšování (použiji originál):', resizeError.message);
+        }
+        console.log(`[BRIDGE] Resize hotov za ${Date.now() - shrinkStartTime}ms`);
+
+        // UPLOAD 
+        const publicUrl = await uploadToCloud(uploadPath, foundFile);
         console.log(`[BRIDGE] Fotka nahrána na cloud: ${publicUrl}`);
 
         res.json({
@@ -81,28 +101,42 @@ app.post('/shoot', async (req, res) => {
     }
 });
 
-function uploadToCloud(filename) {
+function resizeImagePowershell(inputPath, outputPath, maxWidth) {
     return new Promise((resolve, reject) => {
-        const filePath = path.join(SAVE_DIR, filename);
+        const psScript = `
+Add-Type -AssemblyName System.Drawing;
+$img = [System.Drawing.Image]::FromFile('${inputPath}');
+$ratio = $img.Height / $img.Width;
+$newWidth = ${maxWidth};
+$newHeight = [int]($newWidth * $ratio);
+if ($img.Width -lt $newWidth) { $newWidth = $img.Width; $newHeight = $img.Height; }
+$newImg = new-object System.Drawing.Bitmap $newWidth, $newHeight;
+$graph = [System.Drawing.Graphics]::FromImage($newImg);
+$graph.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighSpeed;
+$graph.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::Low; 
+$graph.DrawImage($img, 0, 0, $newWidth, $newHeight);
+$newImg.Save('${outputPath}', [System.Drawing.Imaging.ImageFormat]::Jpeg);
+$img.Dispose();
+$newImg.Dispose();
+$graph.Dispose();
+`;
+        const command = `powershell -Command "${psScript.replace(/\r?\n/g, ' ')}"`;
+        exec(command, { maxBuffer: 1024 * 1024 * 10 }, (error) => {
+            if (error) reject(error); else resolve();
+        });
+    });
+}
 
-        // Použijeme curl pro upload
-        const curlCmd = `curl -X POST -F "type=PHOTO" -F "file=@${filePath}" ${CLOUD_UPLOAD_URL}`;
-
-        exec(curlCmd, (error, stdout, stderr) => {
-            if (error) {
-                console.warn("[UPLOAD] Curl selhal, vracím lokální URL fallback.");
-                resolve(`/photos/${filename}`);
-                return;
-            }
+function uploadToCloud(filePath, originalFilename) {
+    return new Promise((resolve, reject) => {
+        const curlCmd = `curl -X POST -F "type=PHOTO" -F "file=@${filePath};filename=${originalFilename}" ${CLOUD_UPLOAD_URL}`;
+        exec(curlCmd, (error, stdout) => {
+            if (error) { resolve(`/photos/${originalFilename}`); return; }
             try {
-                // Zkusíme parsovat JSON odpověď
                 const response = JSON.parse(stdout);
                 if (response.url) resolve(response.url);
-                else resolve(`/photos/${filename}`);
-            } catch (e) {
-                console.log("[UPLOAD] Raw response:", stdout);
-                resolve(`/photos/${filename}`);
-            }
+                else resolve(`/photos/${originalFilename}`);
+            } catch (e) { resolve(`/photos/${originalFilename}`); }
         });
     });
 }
@@ -116,20 +150,15 @@ app.post('/print', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`\n📷 FotoBuddy Bridge (Cloud Mode v2) běží na http://localhost:${PORT}`);
-    console.log(`ℹ️  Ukládání do: ${SAVE_DIR}`);
-    console.log(`⚡ Stream FPS: ${STREAM_FPS} (Úsporný režim)`);
+    console.log(`\n📷 FotoBuddy Bridge (ULTRA FAST STREAM) běží na http://localhost:${PORT}`);
+    console.log(`ℹ️  Optimizer běží na pozadí (port 5566)`);
     startCloudStream();
-    startCommandPolling(); // Spustit naslouchání příkazům z cloudu
+    startCommandPolling();
 });
 
-// Naslouchání příkazům z Cloudu (Cloud Trigger)
-// Umožňuje fotit z mobilu bez přímého spojení s PC
 function startCommandPolling() {
     console.log('[CMD] Začínám naslouchat příkazům z cloudu...');
-
     const poll = () => {
-        // Ptáme se serveru: "Mám úkol?"
         https.get(`${CLOUD_API_URL}/api/command`, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
@@ -138,81 +167,39 @@ function startCommandPolling() {
                     if (res.statusCode === 200) {
                         const json = JSON.parse(data);
                         if (json.command === 'SHOOT' && !isCapturing) {
-                            console.log('[CMD] PŘIJAT PŘÍKAZ SHOOT Z CLOUDU! 🔫');
+                            console.log('[CMD] PŘIJAT PŘÍKAZ SHOOT 🔫');
                             triggerLocalShoot();
                         }
                     }
-                } catch (e) {
-                    // Ignorujeme chyby parsování
-                }
-                setTimeout(poll, 500); // Ptáme se 2x za sekundu
+                } catch (e) { }
+                setTimeout(poll, 500);
             });
-        }).on('error', (e) => {
-            // Chyba sítě - zkusíme to zase za chvíli
-            setTimeout(poll, 2000);
-        });
+        }).on('error', () => setTimeout(poll, 2000));
     };
     poll();
 }
 
-// Funkce pro lokální odpálení (stejná logika jako endpoint /shoot)
 async function triggerLocalShoot() {
     if (isCapturing) return;
-    isCapturing = true;
-    console.log('[BRIDGE] Provádím Cloud Trigger Capture...');
-    const startTime = Date.now();
-
-    try {
-        await new Promise((resolve, reject) => {
-            const request = http.get(DCC_API_URL, (res) => {
-                // Jen odpálíme, výsledek nás tolik nezajímá, hlavní je soubor
-                res.resume();
-                resolve();
-            });
-            request.on('error', reject);
-        });
-
-        // Čekáme na soubor a uploadujeme ho
-        // (Bridge už má logiku, že uploaduje vše, co najde? 
-        //  Ne, musíme to zavolat explicitně nebo spoléhat na file watcher.)
-        //  V /shoot endpointu to máme explicitní. Zkopírujeme tu logiku sem,
-        //  nebo - ještě lépe - zavoláme sami sebe HTTP requestem, abychom nekopírovali kód.
-
-        // VOLÁNÍ SEBE SAMA (localhost:5555/shoot)
-        // Tím využijeme veškerou stávající logiku endpointu
-        // isCapturing musíme na chvíli uvolnit, protože /shoot si ho nastaví znovu
-        isCapturing = false;
-
-        const postData = JSON.stringify({});
-        const req = http.request({
-            hostname: 'localhost',
-            port: PORT,
-            path: '/shoot',
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': postData.length
-            }
-        }, (res) => {
-            // /shoot zpracuje focení, upload i odpověď (kterou tady ignorujeme)
-            console.log('[CMD] Lokální /shoot endpoint aktivován.');
-        });
-        req.write(postData);
-        req.end();
-
-    } catch (e) {
-        console.error('[CMD] Chyba při spouštění spouště:', e.message);
-        isCapturing = false;
-    }
+    const postData = JSON.stringify({});
+    const req = http.request({
+        hostname: 'localhost',
+        port: PORT,
+        path: '/shoot',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': postData.length }
+    }, () => { });
+    req.write(postData);
+    req.end();
 }
 
 function startCloudStream() {
     if (isStreaming) return;
     isStreaming = true;
-    console.log(`[STREAM] Vysílám na: ${CLOUD_STREAM_URL}`);
-
+    console.log(`[STREAM] Vysílám na: ${CLOUD_STREAM_URL} (Zdroj: 5566 Optimized)`);
     const loop = () => {
-        http.get('http://127.0.0.1:5520/liveview.jpg', (res) => {
+        // Tady je ta změna: čteme z localhost:5566, kde běží náš PowerShell proxy
+        http.get('http://127.0.0.1:5566/', (res) => {
             if (res.statusCode !== 200) {
                 res.resume();
                 return scheduleNext();
@@ -220,22 +207,16 @@ function startCloudStream() {
             const uploadReq = https.request(CLOUD_STREAM_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'image/jpeg', 'Transfer-Encoding': 'chunked' }
-            }, (r) => {
-                r.on('data', () => { });
-                scheduleNext();
-            });
+            }, (r) => { r.on('data', () => { }); scheduleNext(); });
 
             uploadReq.on('error', () => scheduleNext());
             res.pipe(uploadReq);
-        }).on('error', () => scheduleNext());
+        }).on('error', () => {
+            // Pokud optimizer ještě nenastartoval, počkáme
+            scheduleNext();
+        });
     };
-
-    function scheduleNext() {
-        // Výpočet pauzy podle požadovaného FPS
-        const ms = Math.floor(1000 / STREAM_FPS);
-        setTimeout(loop, ms);
-    }
-
+    function scheduleNext() { setTimeout(loop, 1000 / STREAM_FPS); }
     loop();
 }
 
@@ -255,13 +236,13 @@ function waitForNewFile(dir, afterTime, timeoutMs) {
                     try {
                         const stats = fs.statSync(filePath);
                         if (stats.mtimeMs > (afterTime - 500)) {
-                            setTimeout(() => resolve(file), 1500); // Delší čekání na dopsání souboru
+                            setTimeout(() => resolve(file), 1500);
                             return;
                         }
                     } catch (e) { }
                 }
                 elapsed += interval;
-                if (elapsed >= timeoutMs) reject(new Error('Timeout: Fotka se neobjevila. Zkontrolujte Session Settings v DigiCamControl!'));
+                if (elapsed >= timeoutMs) reject(new Error('Timeout: Fotka se neobjevila.'));
                 else setTimeout(check, interval);
             });
         };
