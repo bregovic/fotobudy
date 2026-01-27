@@ -20,7 +20,7 @@ const SAVE_DIR = path.join(process.cwd(), 'public', 'photos');
 
 // --- CLOUD STREAMING KONFIGURACE ---
 // Adresa tvého veřejného serveru na Railway
-const CLOUD_API_URL = 'https://fotobuddy.up.railway.app/api/stream';
+const CLOUD_API_URL = 'https://cvak.up.railway.app/api/stream';
 let isStreaming = false;
 
 // Zámek

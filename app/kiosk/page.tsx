@@ -26,9 +26,14 @@ export default function KioskPage() {
             if (savedIp) setCameraIp(savedIp);
             // Načíst cloud stream preferenci
             const savedCloud = localStorage.getItem('use_cloud_stream');
-            if (savedCloud === 'true' || (window.location.protocol === 'https:' && window.location.hostname !== 'localhost')) {
-                // Pokud jsme na veřejné HTTPS doméně, defaultně zapneme cloud stream
+
+            // AUTOMATIKA: Pokud běžíme na veřejné Railway doméně, MUSÍME použít Cloud Stream.
+            // Localhost tam nefunguje.
+            const isRailway = window.location.hostname.includes('railway.app');
+
+            if (isRailway || savedCloud === 'true') {
                 setUseCloudStream(true);
+                if (isRailway) localStorage.setItem('use_cloud_stream', 'true'); // Uložit pro příště
             }
         }
 
