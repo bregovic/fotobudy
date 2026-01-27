@@ -21,6 +21,7 @@ export default function KioskPage() {
     // Configuration
     const [cameraIp, setCameraIp] = useState(DEFAULT_IP);
     const [useCloudStream, setUseCloudStream] = useState(false);
+    const [isConfigured, setIsConfigured] = useState(false); // Prevence Mixed Content
 
     const lastSeenTimeRef = useRef<number>(0);
 
@@ -47,6 +48,7 @@ export default function KioskPage() {
                 setUseCloudStream(true);
                 if (isRailway) localStorage.setItem('use_cloud_stream', 'true');
             }
+            setIsConfigured(true); // Jsme připraveni, můžeme renderovat stream URL
         }
         fetch('/api/session', {
             method: 'POST',
@@ -201,7 +203,7 @@ export default function KioskPage() {
                 ) : (
                     <div className="w-full h-full relative overflow-hidden">
                         <img
-                            src={useCloudStream ? `/api/stream/snapshot?t=${liveTick}` : `http://${cameraIp}:5521/live`}
+                            src={!isConfigured ? '' : (useCloudStream ? `/api/stream/snapshot?t=${liveTick}` : `http://${cameraIp}:5521/live`)}
                             className="w-full h-full object-contain transition-opacity duration-200"
                             onLoad={() => { if (useCloudStream) setTimeout(() => setLiveTick(Date.now()), 10); }}
                             onError={(e) => {
