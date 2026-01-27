@@ -87,9 +87,9 @@ export default function ProfilePage() {
                 fetchAssets();
                 alert('Nahráno! ✅');
             } else {
-                alert('Chyba nahrávání! ❌');
+                alert('Chyba nahrávání: ' + (data.error || 'Neznámá chyba'));
             }
-        } catch (e) { console.error(e); }
+        } catch (e: any) { console.error(e); alert('Chyba komunikace: ' + e.message); }
     };
 
     const deleteAsset = async (id: string) => {

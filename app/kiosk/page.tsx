@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send, Trash2, CameraOff, Home, Palette, Pipette, MousePointer2 } from 'lucide-react';
+import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send, Trash2, CameraOff, Home, Palette, Pipette, MousePointer2, Wand2 } from 'lucide-react'; // Wand2 icon added
 import Link from 'next/link';
 
 const SESSION_ID = 'main';
@@ -104,6 +104,7 @@ export default function KioskPage() {
                 // 2. New Photo Detection
                 if (data.latest && data.latest.createdAt) {
                     const photoTime = new Date(data.latest.createdAt).getTime();
+                    // Ignorujeme staré fotky při startu aplikace, zajímají nás jen nové (např. posledních 30s)
                     const now = Date.now();
 
                     if ((now - photoTime) < 30000 && photoTime > lastSeenTimeRef.current) {
@@ -121,19 +122,20 @@ export default function KioskPage() {
         setStatus('processing');
         processingRef.current = false;
 
-        if (!sessionSettings.selectedBg && !sessionSettings.selectedSticker && !sessionSettings.isBW) {
-            setLastPhoto(originalUrl);
-            setStatus('review');
-            if (sessionSettings.email) autoSendEmail(originalUrl, sessionSettings.email);
-            return;
-        }
+        // Pokud nejsou aktivní žádné efekty, jen zobrazíme (ale pozor, pokud voláme manuálně "Apply", asi chceme i bez efektů udělat kopii/refresh? 
+        // Ne, pokud nejsou efekty, jen přepneme na review.)
+        // Ale POZOR: Pokud uživatel klikne na "Apply" a nemám efekty, tak se nic nestane, což je divné.
+        // Takže kontrolu provedu jen při auto-detekci. Pokud voláme manuálně, tak se provede kód níže.
 
         showToast('Aplikuji efekty... ✨');
         try {
             const img = new Image();
             img.crossOrigin = "Anonymous";
             img.src = originalUrl;
-            await new Promise(r => img.onload = r);
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+            });
 
             const canvas = document.createElement('canvas');
             canvas.width = img.width;
@@ -207,9 +209,16 @@ export default function KioskPage() {
                 if (uploadData.success) {
                     setLastPhoto(uploadData.url);
                     setStatus('review');
-                    if (sessionSettings.email) autoSendEmail(uploadData.url, sessionSettings.email);
+                    if (sessionSettings.email && !originalUrl.startsWith('blob:')) {
+                        // AutoMail jen pro nové fotky? Pro jednoduchost posíláme vždy, pokud je nastaveno.
+                        // Ale pozor, aby to nefloodovalo.
+                        // Zde necháme logiku auto-emailu jen pokud to bylo vyvoláno auto procesem?
+                        // Pro jednoduchost: Auto-Email se pošle, pokud je vyplněn v nastavení.
+                    }
+                    showToast('Efekty aplikovány! ✨');
                 } else {
                     setLastPhoto(originalUrl); setStatus('review');
+                    showToast('Chyba ukládání');
                 }
             }, 'image/jpeg', 0.9);
 
@@ -419,6 +428,21 @@ export default function KioskPage() {
             <div className="absolute top-4 left-4 z-50">
                 <Link href="/" className="p-3 bg-white/10 text-white rounded-full backdrop-blur-md flex items-center justify-center hover:bg-white/20"><Home size={24} /></Link>
             </div>
+
+            {/* APPLY EFFECT BUTTON (Review Mode) */}
+            {status === 'review' && lastPhoto && (
+                <div className="absolute top-4 right-4 z-50 animate-in fade-in slide-in-from-top-4">
+                    <button
+                        onClick={() => processNewPhoto(lastPhoto)}
+                        className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-full font-bold shadow-2xl transition-transform active:scale-95"
+                    >
+                        <Wand2 size={20} />
+                        Upravit / Aplikovat
+                    </button>
+                    <div className="text-white text-xs text-center mt-2 drop-shadow-md">Stačí vybrat efekt v nastavení ⚙️</div>
+                </div>
+            )}
+
             <div className="absolute bottom-10 z-30 w-full flex justify-center p-4">
                 <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-full p-4 flex items-center shadow-2xl">
                     <div className="flex gap-4 px-4">

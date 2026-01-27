@@ -9,11 +9,12 @@ export async function GET(req: NextRequest) {
         const assets = await prisma.asset.findMany({
             where: filter,
             orderBy: { createdAt: 'desc' },
-            select: { id: true, type: true, url: true, name: true } // Nechceme data (bytes), to by bylo obří
+            select: { id: true, type: true, url: true, name: true }
         });
 
         return NextResponse.json(assets);
     } catch (e: any) {
+        console.error("[API Asset GET Error]:", e);
         return NextResponse.json({ error: e.message }, { status: 500 });
     }
 }
@@ -24,23 +25,40 @@ export async function POST(req: NextRequest) {
         const file = formData.get('file') as File;
         const type = formData.get('type') as string; // BACKGROUND | STICKER
 
-        if (!file || !type) return NextResponse.json({ error: 'Missing file or type' }, { status: 400 });
+        if (!file || !type) {
+            return NextResponse.json({ error: 'Chybí soubor nebo typ.' }, { status: 400 });
+        }
+
+        // Kontrola velikosti (např. 4MB limit pro DB)
+        if (file.size > 4 * 1024 * 1024) {
+            return NextResponse.json({ error: 'Soubor je příliš velký (max 4MB).' }, { status: 413 });
+        }
 
         const buffer = Buffer.from(await file.arrayBuffer());
         const filename = file.name;
-        const publicUrl = `/api/view/asset_${Date.now()}_${filename}`; // Virtuální URL, view handler to obslouží stejně jako fotky
 
-        const asset = await prisma.asset.create({
-            data: {
-                type,
-                name: filename,
-                url: publicUrl,
-                data: buffer
-            }
-        });
+        // Unikátní název pro virtuální URL
+        const safeName = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const publicUrl = `/api/view/asset_${Date.now()}_${safeName}`;
 
-        return NextResponse.json({ success: true, asset });
+        // Zkusíme uložit
+        try {
+            const asset = await prisma.asset.create({
+                data: {
+                    type,
+                    name: safeName,
+                    url: publicUrl,
+                    data: buffer
+                }
+            });
+            return NextResponse.json({ success: true, asset });
+        } catch (dbError: any) {
+            console.error("[API Asset DB Error]:", dbError);
+            return NextResponse.json({ error: 'Chyba databáze: ' + dbError.message }, { status: 500 });
+        }
+
     } catch (e: any) {
+        console.error("[API Asset Upload Error]:", e);
         return NextResponse.json({ error: e.message }, { status: 500 });
     }
 }
