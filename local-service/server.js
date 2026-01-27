@@ -3,6 +3,7 @@ const cors = require('cors');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const http = require('http'); // Pro HTTP requesty
 
 const app = express();
 const PORT = 5555;
@@ -10,14 +11,16 @@ const PORT = 5555;
 app.use(cors());
 app.use(express.json());
 
-// --- KONFIGURACE PRO CANON 5D MARK II ---
-const CAMERA_CMD_TEMPLATE = '"C:\\Program Files (x86)\\digiCamControl\\CameraControlCmd.exe" /capture /noautofocus /filename "%filename%"';
+// --- KONFIGURACE PRO HTTP TRIGGER ---
+// Místo CMD exe použijeme HTTP příkaz na běžící instanci
+// Port 5520 podle tvého nastavení
+const DCC_API_URL = 'http://127.0.0.1:5520/?CMD=Capture';
 const SAVE_DIR = path.join(process.cwd(), 'public', 'photos');
 
-// Zámek proti vícenásobnému spuštění
+// Zámek
 let isCapturing = false;
 
-// Vytvoření složky pro fotky
+// Vytvoření složky
 if (!fs.existsSync(SAVE_DIR)) {
     fs.mkdirSync(SAVE_DIR, { recursive: true });
 }
@@ -25,70 +28,51 @@ if (!fs.existsSync(SAVE_DIR)) {
 app.use('/photos', express.static(SAVE_DIR));
 
 app.get('/status', (req, res) => {
-    res.json({
-        status: 'ready',
-        camera: 'Canon 5D Mark II (DigiCamControl)',
-        busy: isCapturing
-    });
+    res.json({ status: 'ready', mode: 'http-trigger', busy: isCapturing });
 });
 
-app.post('/shoot', (req, res) => {
-    // Pokud už běží focení, odmítneme další pokus
+app.post('/shoot', async (req, res) => {
     if (isCapturing) {
-        console.warn('[BRIDGE] Ignoruji požadavek: Fotoaparát je zaneprázdněn.');
-        return res.status(429).json({ success: false, error: 'Camera busy', busy: true });
+        return res.status(429).json({ success: false, error: 'Camera busy' });
     }
 
-    const timestamp = Date.now();
-    const filename = `foto_${timestamp}.jpg`;
-    const fullPath = path.join(SAVE_DIR, filename);
-
-    // Nahrazení %filename% v příkazu
-    const cmd = CAMERA_CMD_TEMPLATE.replace('%filename%', fullPath);
-
-    console.log(`[BRIDGE] Spouštím fotoaparát: ${cmd}`);
+    console.log('[BRIDGE] Odesílám HTTP příkaz: Capture');
     isCapturing = true;
+    const startTime = Date.now();
 
-    // Timeout pojistka
-    const timeout = setTimeout(() => {
-        if (isCapturing) {
-            console.error('[BRIDGE] Timeout: Kamera neodpověděla včas. Zabíjím proces...');
-            exec('taskkill /F /IM CameraControlCmd.exe', () => { }); // Násilné ukončení
-            isCapturing = false;
-        }
-    }, 15000); // Prodlouženo na 15s
-
-    // PREVENTIVNÍ ÚKLID: Zkusíme zabít staré visící procesy (kromě hlavního DCC, ten se jmenuje jinak)
-    // CameraControlCmd.exe je ten řádkový nástroj co se seká
-    exec('taskkill /F /IM CameraControlCmd.exe', (err) => {
-        // Ignorujeme chybu (pokud nic neběželo, vrátí to chybu, to je ok)
-
-        // Teď teprve fotíme
-        exec(cmd, (error, stdout, stderr) => {
-            clearTimeout(timeout);
-            isCapturing = false;
-
-            if (error) {
-                // Pokud to spadlo, asi se to nepotkalo s kamerou
-                console.error(`[CHYBA] Exec error: ${error.message}`);
-                return res.status(500).json({
-                    success: false,
-                    error: 'Chyba příkazu (Kamera busy nebo odpojena)',
-                    details: stderr
-                });
-            }
-
-            console.log(`[BRIDGE] DigiCamOutput: ${stdout}`);
-
-            if (fs.existsSync(fullPath)) {
-                console.log(`[BRIDGE] Fotka úspěšně uložena: ${filename}`);
-                res.json({ success: true, filename: filename, url: `/photos/${filename}` });
-            } else {
-                console.error(`[CHYBA] Soubor nevznikl: ${fullPath}`);
-                res.status(500).json({ success: false, error: 'Soubor nevznikl' });
-            }
+    try {
+        // 1. Spustíme spoušť přes HTTP (pomocí nativního http modulu)
+        await new Promise((resolve, reject) => {
+            const request = http.get(DCC_API_URL, (response) => {
+                if (response.statusCode < 200 || response.statusCode > 299) {
+                    reject(new Error(`DigiCamControl vrátil status: ${response.statusCode}`));
+                } else {
+                    response.on('data', () => { }); // Konzumovat stream
+                    response.on('end', resolve);
+                }
+            });
+            request.on('error', (err) => reject(new Error(`Chyba spojení s DigiCamControl (Port 5520): ${err.message}`)));
         });
-    });
+
+        console.log('[BRIDGE] Trigger OK, čekám na soubor...');
+
+        // 2. Čekáme na nový soubor ve složce (Polling)
+        // Čekáme max 15 sekund
+        const foundFile = await waitForNewFile(SAVE_DIR, startTime, 15000);
+
+        console.log(`[BRIDGE] Fotka nalezena: ${foundFile}`);
+        res.json({
+            success: true,
+            filename: foundFile,
+            url: `/photos/${foundFile}`
+        });
+
+    } catch (e) {
+        console.error(`[CHYBA] ${e.message}`);
+        res.status(500).json({ success: false, error: e.message });
+    } finally {
+        isCapturing = false;
+    }
 });
 
 app.post('/print', (req, res) => {
@@ -100,5 +84,49 @@ app.post('/print', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`\n📷 FotoBuddy Bridge (Locking Enabled) běží na http://localhost:${PORT}`);
+    console.log(`\n📷 FotoBuddy Bridge (HTTP Trigger Mode) běží na http://localhost:${PORT}`);
+    console.log(`ℹ️  Ujistěte se, že DigiCamControl ukládá fotky do:\n   ${SAVE_DIR}`);
 });
+
+// Funkce pro čekání na nový soubor
+function waitForNewFile(dir, afterTime, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        const interval = 500;
+        let elapsed = 0;
+
+        const check = () => {
+            // Najdeme nejnovější soubor
+            fs.readdir(dir, (err, files) => {
+                if (err) return;
+
+                // Filtrujeme jen obrázky (bez dočasných souborů)
+                const images = files.filter(f => {
+                    const low = f.toLowerCase();
+                    return (low.endsWith('.jpg') || low.endsWith('.png')) && !low.includes('.tmp');
+                });
+
+                for (const file of images) {
+                    const filePath = path.join(dir, file);
+                    try {
+                        const stats = fs.statSync(filePath);
+                        // Pokud je soubor novější než začátek focení
+                        // (dáváme malou toleranci -100ms kdyby se časy rozcházely)
+                        if (stats.mtimeMs > (afterTime - 100)) {
+                            // Počkáme chvilku, ať se dopíše na disk úplně
+                            setTimeout(() => resolve(file), 500);
+                            return;
+                        }
+                    } catch (e) { }
+                }
+
+                elapsed += interval;
+                if (elapsed >= timeoutMs) {
+                    reject(new Error('Timeout: Fotka se neobjevila (Zkontrolujte nastavení složky v DigiCamControlu!)'));
+                } else {
+                    setTimeout(check, interval);
+                }
+            });
+        };
+        check();
+    });
+}
