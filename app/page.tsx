@@ -11,13 +11,15 @@ export default function Home() {
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-[100px] animate-float" style={{ animationDelay: '2s' }} />
 
       {/* Header */}
-      <div className="text-center mb-12 relative z-10">
-        <h1 className="text-5xl md:text-7xl font-black mb-4 tracking-tight">
-          <span className="text-gradient">FotoBuddy</span>
-        </h1>
-        <p className="text-slate-400 text-lg md:text-xl font-light tracking-wide">
-          Zachyťte okamžik. Navždy.
-        </p>
+      <div className="text-center mb-12 relative z-10 flex flex-col items-center">
+        {/* Logo Blick & Cvak */}
+        <div className="relative w-80 md:w-96 h-auto hover:scale-105 transition-transform duration-500 drop-shadow-2xl">
+          <img
+            src="/logo.png"
+            alt="Blick & Cvak"
+            className="w-full h-auto object-contain"
+          />
+        </div>
       </div>
 
       {/* Navigation Cards Grid */}
@@ -71,11 +73,6 @@ export default function Home() {
 
       </div>
 
-      {/* Footer */}
-      <div className="absolute bottom-8 text-slate-500 text-xs flex items-center gap-2 opacity-50">
-        <Sparkles size={12} />
-        <span>Powered by Antigravity AI</span>
-      </div>
 
     </main>
   );

@@ -5,7 +5,7 @@ import './globals.css';
 const outfit = Outfit({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'FotoBuddy',
+  title: 'Blick & Cvak',
   description: 'Chytrá fotobudka pro vaše akce',
 };
 
