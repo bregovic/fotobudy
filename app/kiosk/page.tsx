@@ -130,7 +130,7 @@ export default function KioskPage() {
                 .then(data => {
                     // 1. Priorita: Nastavení z databáze
                     if (data.use_cloud_stream !== undefined && data.use_cloud_stream !== null && data.use_cloud_stream !== '') {
-                        setUseCloudStream(data.use_cloud_stream === 'true');
+                        setUseCloudStream(String(data.use_cloud_stream).toLowerCase() === 'true' || String(data.use_cloud_stream) === '1');
                     }
                     // 2. Fallback: Automatická detekce
                     else if (isSecure || window.location.hostname.includes('railway.app')) {
