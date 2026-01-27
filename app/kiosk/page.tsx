@@ -253,24 +253,42 @@ export default function KioskPage() {
 
             {/* SETTINGS */}
             {showSettings && (
-                <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-md flex items-center justify-center p-8">
-                    <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl">
-                        <div className="flex justify-between items-center mb-6">
+                <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-8 animate-in fade-in zoom-in duration-200">
+                    <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 max-w-lg w-full shadow-2xl text-white">
+                        <div className="flex justify-between items-center mb-8">
                             <h2 className="text-2xl font-bold">Nastavení</h2>
-                            <button onClick={() => setShowSettings(false)}><X /></button>
+                            <button onClick={() => setShowSettings(false)} className="p-2 bg-white/10 rounded-full hover:bg-white/20"><X /></button>
                         </div>
+
                         <div className="space-y-4">
-                            <div className="p-4 bg-purple-50 border border-purple-100 rounded-xl flex items-center justify-between">
-                                <div><h3 className="font-semibold mb-1">☁️ Cloud Stream</h3></div>
-                                <button onClick={() => saveCloud(!useCloudStream)} className={`w-12 h-6 rounded-full transition-colors relative ${useCloudStream ? 'bg-purple-600' : 'bg-slate-300'}`}>
-                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${useCloudStream ? 'translate-x-6' : 'translate-x-1'}`}></div>
+                            {/* Cloud Stream Toggle */}
+                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl flex items-center justify-between">
+                                <div>
+                                    <h3 className="font-semibold text-lg">☁️ Cloud Stream</h3>
+                                    <p className="text-slate-400 text-sm mt-1">Snapshot režim (Webcam style)</p>
+                                </div>
+                                <button onClick={() => saveCloud(!useCloudStream)} className={`w-14 h-8 rounded-full transition-colors relative ${useCloudStream ? 'bg-indigo-500' : 'bg-slate-600'}`}>
+                                    <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform shadow-sm ${useCloudStream ? 'translate-x-7' : 'translate-x-1'}`}></div>
                                 </button>
                             </div>
+
+                            {/* Local IP fallback (only if Cloud is OFF) */}
                             {!useCloudStream && (
-                                <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl">
-                                    <input type="text" value={cameraIp} onChange={(e) => saveIp(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg" />
+                                <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
+                                    <label className="block text-sm text-slate-400 mb-2">Lokální IP Bridge</label>
+                                    <input
+                                        type="text"
+                                        value={cameraIp}
+                                        onChange={(e) => saveIp(e.target.value)}
+                                        className="w-full p-3 bg-slate-950 border border-slate-700 rounded-lg focus:border-indigo-500 outline-none text-white font-mono"
+                                    />
                                 </div>
                             )}
+
+                            {/* Info */}
+                            <div className="p-4 rounded-xl bg-slate-950/50 text-center">
+                                <p className="text-xs text-slate-500">ID Session: {SESSION_ID}</p>
+                            </div>
                         </div>
                     </div>
                 </div>
