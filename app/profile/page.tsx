@@ -31,7 +31,7 @@ export default function ProfilePage() {
 
     const handleLogin = (e: React.FormEvent) => {
         e.preventDefault();
-        if (password === '1234') { // Jednoduché heslo
+        if (password === 'Heslo123') { // Jednoduché heslo
             setIsAuthenticated(true);
         } else {
             alert('Špatné heslo!');
@@ -72,7 +72,7 @@ export default function ProfilePage() {
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            placeholder="Zadejte heslo (1234)"
+                            placeholder="Zadejte heslo"
                             className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl text-center text-xl tracking-widest focus:border-emerald-500 outline-none transition-colors"
                             autoFocus
                         />
