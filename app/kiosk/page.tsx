@@ -150,13 +150,10 @@ export default function KioskPage() {
 
     const alerting = (msg: string) => { if (typeof window !== 'undefined') alert(msg); };
 
-    // Live View Polling (300ms) - "Webcam Style"
-    const [liveTick, setLiveTick] = useState(0);
-    useEffect(() => {
-        if (status !== 'idle') return;
-        const interval = setInterval(() => setLiveTick(Date.now()), 250);
-        return () => clearInterval(interval);
-    }, [status]);
+    // Live View: "Zdvořilé stahování" (Adaptive Polling)
+    const [liveTick, setLiveTick] = useState(Date.now());
+
+    // Interval už nepotřebujeme, řídí se to samo událostmi onLoad/onError v <img>
 
     // --- RENDER ---
     return (
@@ -181,10 +178,19 @@ export default function KioskPage() {
                         <img
                             src={useCloudStream ? `/api/stream/snapshot?t=${liveTick}` : `http://${cameraIp}:5521/live`}
                             className="w-full h-full object-cover transition-opacity duration-200"
+
+                            // Tady je to kouzlo: Další snímek si vyžádáme až když tenhle dorazí
+                            onLoad={() => {
+                                if (useCloudStream) setTimeout(() => setLiveTick(Date.now()), 50);
+                            }}
                             onError={(e) => {
-                                // Fallback pro lokální režim (když cloud nejede)
                                 const target = e.currentTarget;
-                                if (!useCloudStream && target.src.includes('5521')) {
+                                // Pokud selže cloud, zkusíme to za chvíli znovu
+                                if (useCloudStream) {
+                                    setTimeout(() => setLiveTick(Date.now()), 500);
+                                }
+                                // Fallback pro lokální režim
+                                else if (target.src.includes('5521')) {
                                     target.src = `http://${cameraIp}:5520/liveview.jpg`;
                                 }
                             }}
