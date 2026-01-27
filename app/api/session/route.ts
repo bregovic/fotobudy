@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { initDB } from '@/lib/init';
 
 export async function POST(request: Request) {
     try {
+        // Auto-init DB to ensure tables exist
+        await initDB();
+
         const body = await request.json();
         const { id } = body;
 
@@ -11,7 +15,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error(error);
-        return NextResponse.json({ error: 'Database error' }, { status: 500 });
+        console.error('Session API Error:', error);
+        return NextResponse.json({ error: 'Database error', details: String(error) }, { status: 500 });
     }
 }
