@@ -21,7 +21,6 @@ export default function KioskPage() {
     // Configuration
     const [cameraIp, setCameraIp] = useState(DEFAULT_IP);
     const [useCloudStream, setUseCloudStream] = useState(false);
-    const [streamKey, setStreamKey] = useState(0);
 
     const lastSeenTimeRef = useRef<number>(0);
 
@@ -34,15 +33,12 @@ export default function KioskPage() {
             const savedIp = localStorage.getItem('camera_ip');
             if (savedIp) setCameraIp(savedIp);
 
-            // AUTOMATIKA: Pokud jsme na HTTPS (Railway), MUSÍME použít Cloud Stream.
-            // Prohlížeč by lokální IP (http://...) stejně zablokoval (Mixed Content).
             const savedCloud = localStorage.getItem('use_cloud_stream');
             const isRailway = window.location.hostname.includes('railway.app');
 
             if (isSecure || isRailway || savedCloud === 'true') {
                 console.log("Forcing Cloud Stream due to HTTPS/Railway");
                 setUseCloudStream(true);
-                // Uložíme to, aby to příště naskočilo hned
                 if (isRailway) localStorage.setItem('use_cloud_stream', 'true');
             }
         }
@@ -177,7 +173,7 @@ export default function KioskPage() {
                         {/* Snapshot Mode (Webcam Style) */}
                         <img
                             src={useCloudStream ? `/api/stream/snapshot?t=${liveTick}` : `http://${cameraIp}:5521/live`}
-                            className="w-full h-full object-cover transition-opacity duration-200"
+                            className="w-full h-full object-contain transition-opacity duration-200"
 
                             // Tady je to kouzlo: Další snímek si vyžádáme až když tenhle dorazí
                             onLoad={() => {
@@ -199,7 +195,8 @@ export default function KioskPage() {
                             <p>Spojuji se s kamerou...</p>
                         </div>
 
-                        {/* Frame */}
+                        {/* Frame - zachováno, ale může být mírně mimo, pokud se fotka letterboxuje. 
+                            Prozatím necháme jako vizuální prvek, ale uživatel vidí celý záběr. */}
                         <div className="absolute inset-0 border-[20px] border-black/80 pointer-events-none z-10 rounded-[30px] m-4 shadow-2xl"></div>
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30 pointer-events-none z-10"></div>
                     </div>
