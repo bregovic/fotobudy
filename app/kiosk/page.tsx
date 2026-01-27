@@ -168,14 +168,19 @@ export default function KioskPage() {
                     <img src={lastPhoto} className="w-full h-full object-contain bg-slate-900" />
                 ) : (
                     <div className="w-full h-full relative overflow-hidden">
+                        {/* Live Stream - s klíčem pro reset DOMu při změně režimu */}
                         <img
+                            key={useCloudStream ? 'cloud-stream' : 'local-stream'}
                             src={useCloudStream ? `/api/stream?t=${streamKey}` : `http://${cameraIp}:5521/live`}
                             className="w-full h-full object-cover"
                             onError={(e) => {
                                 const target = e.currentTarget;
-                                if (useCloudStream) { setTimeout(() => setStreamKey(k => k + 1), 2000); return; }
+                                if (useCloudStream) {
+                                    setTimeout(() => setStreamKey(k => k + 1), 2000);
+                                    return;
+                                }
                                 if (target.src.includes('5521')) target.src = `http://${cameraIp}:5520/liveview.jpg`;
-                                else target.style.display = 'none';
+                                else if (!useCloudStream) target.style.display = 'none';
                             }}
                         />
                         <div className="absolute inset-0 -z-10 flex items-center justify-center text-slate-500">
