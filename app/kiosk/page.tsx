@@ -157,39 +157,34 @@ export default function KioskPage() {
             )}
 
             {/* 1. LAYER: MAIN CONTENT (Live View or Photo) */}
-            <div className="absolute inset-0 bg-black">
+            <div className="absolute inset-0 bg-black flex items-center justify-center">
                 {status === 'review' && lastPhoto ? (
                     <img src={lastPhoto} className="w-full h-full object-contain bg-slate-900" />
                 ) : (
-                    <div className="w-full h-full relative">
+                    <div className="w-full h-full relative overflow-hidden">
                         {/* Live Stream MJPEG or Cloud Stream */}
                         <img
                             src={useCloudStream ? '/api/stream' : `http://${cameraIp}:5521/live`}
                             className="w-full h-full object-cover"
                             onError={(e) => {
-                                if (useCloudStream) return;
+                                if (useCloudStream) return; // Necháme to na loaderu
                                 const target = e.currentTarget;
-                                // Fallbacks logic with dynamic IP
-                                if (target.src.includes('5521')) {
-                                    target.src = `http://${cameraIp}:5520/liveview.jpg`;
-                                }
-                                else if (target.src.includes('5520')) {
-                                    target.style.display = 'none';
-                                }
+                                if (target.src.includes('5521')) target.src = `http://${cameraIp}:5520/liveview.jpg`;
+                                else target.style.display = 'none';
                             }}
                         />
 
-                        {/* Fallback help text */}
+                        {/* Fallback help text (under the image) */}
                         <div className="absolute inset-0 -z-10 flex items-center justify-center text-slate-500 text-center p-4">
                             <div>
-                                <p className="font-bold mb-2">{useCloudStream ? 'Čekám na Cloud Stream...' : 'Hledám signál kamery...'}</p>
-                                {!useCloudStream && <p className="font-mono text-sm bg-slate-200 px-2 py-1 rounded mb-2">{cameraIp}</p>}
-                                <p className="text-sm">
-                                    {useCloudStream ? 'Ujistěte se, že na PC běží Bridge a vysílá.' : 'Zkouším porty 5521, 5520.'}
-                                </p>
+                                <p className="font-bold mb-2 text-white">Načítám obraz...</p>
+                                <p className="text-sm text-gray-400">Pokud toto vidíte dlouho, zkontrolujte Bridge.</p>
                             </div>
                         </div>
 
+                        {/* DECORATIVE FRAME OVERLAY */}
+                        <div className="absolute inset-0 border-[20px] border-black/80 pointer-events-none z-10 rounded-[30px] m-4 shadow-2xl"></div>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30 pointer-events-none z-10"></div>
                     </div>
                 )}
             </div>
@@ -261,58 +256,64 @@ export default function KioskPage() {
             )}
 
             {/* 3. LAYER: CONTROLS (Bottom Dock) */}
-            <div className="absolute bottom-8 z-30 w-full flex justify-center p-4">
-                <div className="dock-container">
+            <div className="absolute bottom-10 z-30 w-full flex justify-center p-4">
+                <div className="dock-container bg-black/40 backdrop-blur-xl border border-white/10 rounded-full p-4 flex items-center shadow-2xl">
 
                     {/* Left Group */}
-                    <div className="flex gap-2">
-                        <button className="icon-btn" onClick={() => setShowSettings(true)}>
-                            <Settings size={24} />
+                    <div className="flex gap-4 px-4">
+                        <button className="flex flex-col items-center gap-1 text-white opacity-80 hover:opacity-100 hover:scale-110 transition-all font-medium text-xs" onClick={() => setShowSettings(true)}>
+                            <div className="p-3 bg-white/10 rounded-full border border-white/10">
+                                <Settings size={20} />
+                            </div>
                             <span>Nastavení</span>
                         </button>
-                        <button className="icon-btn">
-                            <ImageIcon size={24} />
+                        <button className="flex flex-col items-center gap-1 text-white opacity-80 hover:opacity-100 hover:scale-110 transition-all font-medium text-xs">
+                            <div className="p-3 bg-white/10 rounded-full border border-white/10">
+                                <ImageIcon size={20} />
+                            </div>
                             <span>Galerie</span>
                         </button>
                     </div>
 
                     {/* Center Trigger */}
-                    <div className="mx-4">
+                    <div className="mx-6 relative">
                         {status === 'review' ? (
-                            <button className="shutter-btn" onClick={() => { setStatus('idle'); processingRef.current = false; }} style={{ borderColor: '#ef4444' }}>
-                                <RefreshCw size={32} color="#ef4444" />
+                            <button className="w-20 h-20 rounded-full border-4 border-red-500 flex items-center justify-center bg-red-500/20 hover:scale-105 transition-all shadow-lg active:scale-95" onClick={() => { setStatus('idle'); processingRef.current = false; }}>
+                                <RefreshCw size={32} color="#fff" />
                             </button>
                         ) : (
                             <button
-                                className="shutter-btn transform active:scale-90 transition-transform duration-100"
+                                className="w-24 h-24 rounded-full border-4 border-white flex items-center justify-center bg-white/20 hover:bg-white/30 backdrop-blur-sm transition-all active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
                                 onClick={() => {
                                     console.log("Shutter clicked!");
                                     startCountdown();
                                 }}
                             >
-                                <div className="shutter-inner"></div>
+                                <div className="w-16 h-16 bg-white rounded-full shadow-inner"></div>
                             </button>
                         )}
                     </div>
 
                     {/* Right Group */}
-                    <div className="flex gap-2">
+                    <div className="flex gap-4 px-4">
                         <button
-                            className="icon-btn"
+                            className="flex flex-col items-center gap-1 text-white opacity-80 hover:opacity-100 hover:scale-110 transition-all font-medium text-xs disabled:opacity-30 disabled:hover:scale-100"
                             disabled={status !== 'review'}
-                            style={{ opacity: status === 'review' ? 1 : 0.3 }}
                             onClick={printPhoto}
                         >
-                            <Printer size={24} />
+                            <div className="p-3 bg-white/10 rounded-full border border-white/10">
+                                <Printer size={20} />
+                            </div>
                             <span>Tisk</span>
                         </button>
                         <button
-                            className="icon-btn"
+                            className="flex flex-col items-center gap-1 text-white opacity-80 hover:opacity-100 hover:scale-110 transition-all font-medium text-xs disabled:opacity-30 disabled:hover:scale-100"
                             disabled={status !== 'review'}
-                            style={{ opacity: status === 'review' ? 1 : 0.3 }}
                             onClick={() => alert('Zatím neimplementováno')}
                         >
-                            <Mail size={24} />
+                            <div className="p-3 bg-white/10 rounded-full border border-white/10">
+                                <Mail size={20} />
+                            </div>
                             <span>Email</span>
                         </button>
                     </div>
