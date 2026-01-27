@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+// Používáme relativní cestu, aby to fungovalo vždy (i bez aliasů)
 import { prisma } from '../../../../lib/prisma';
 
 export async function POST(req: NextRequest) {
@@ -6,7 +7,7 @@ export async function POST(req: NextRequest) {
         const formData = await req.formData();
         const file = formData.get('file') as File;
         const type = (formData.get('type') as String) || 'PHOTO';
-        const localPath = formData.get('localPath') as string || ''; // Cesta z Bridge
+        const localPath = formData.get('localPath') as string || '';
 
         if (!file) {
             return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -15,16 +16,15 @@ export async function POST(req: NextRequest) {
         const buffer = Buffer.from(await file.arrayBuffer());
         const filename = file.name;
 
-        // Vytvoříme virtuální URL (už nebude existovat na disku, ale View si ji najde)
         const publicUrl = `/api/view/${filename}`;
 
-        // ULOŽENÍ DO DB ("Database as Storage")
+        // ULOŽENÍ DO DB
         const media = await prisma.media.create({
             data: {
                 url: publicUrl,
                 type: type as string,
-                data: buffer,         // TADY ukládáme samotný obrázek
-                localPath: localPath  // A tady cestu u tebe na PC
+                data: buffer,
+                localPath: localPath
             }
         });
 
