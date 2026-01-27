@@ -19,49 +19,67 @@ export default function ProfilePage() {
     // System Settings
     const [useCloudStream, setUseCloudStream] = useState(false);
 
-    // Načtení při startu
+    // Loading State
+    const [loading, setLoading] = useState(false);
+
+    // Načtení z DB (po přihlášení nebo hned? Z bezpečnostních důvodů až po přihlášení, ale Kiosk to potřebuje. 
+    // Pro jednoduchost: API je veřejné pro čtení (kvůli Kiosku), formulář je skrytý.
     useEffect(() => {
-        const savedSmtp = localStorage.getItem('smtp_config');
-        if (savedSmtp) {
-            try {
-                const config = JSON.parse(savedSmtp);
-                setSmtpHost(config.host || '');
-                setSmtpPort(config.port || '587');
-                setSmtpUser(config.user || '');
-                setSmtpPass(config.pass || '');
-            } catch (e) { }
-        }
+        setLoading(true);
+        fetch('/api/settings')
+            .then(res => res.json())
+            .then(data => {
+                // SMTP
+                if (data.smtp_config) {
+                    setSmtpHost(data.smtp_config.host || '');
+                    setSmtpPort(data.smtp_config.port || '587');
+                    setSmtpUser(data.smtp_config.user || '');
+                    setSmtpPass(data.smtp_config.pass || '');
+                }
+                // AI
+                if (data.openai_api_key) setOpenAiKey(data.openai_api_key);
 
-        const savedKey = localStorage.getItem('openai_api_key');
-        if (savedKey) setOpenAiKey(savedKey);
-
-        const savedCloud = localStorage.getItem('use_cloud_stream');
-        if (savedCloud === 'true') setUseCloudStream(true);
-
-        // Auto-login logic (skipped)
+                // Cloud
+                if (data.use_cloud_stream) setUseCloudStream(data.use_cloud_stream === 'true');
+            })
+            .catch(console.error)
+            .finally(() => setLoading(false));
     }, []);
 
     const handleLogin = (e: React.FormEvent) => {
         e.preventDefault();
-        if (password === 'Heslo123') { // Jednoduché heslo
+        if (password === 'Heslo123') {
             setIsAuthenticated(true);
         } else {
             alert('Špatné heslo!');
         }
     };
 
-    const handleSave = () => {
-        const smtpConfig = {
-            host: smtpHost,
-            port: smtpPort,
-            user: smtpUser,
-            pass: smtpPass
+    const handleSave = async () => {
+        setLoading(true);
+        const settings = {
+            smtp_config: {
+                host: smtpHost,
+                port: smtpPort,
+                user: smtpUser,
+                pass: smtpPass
+            },
+            openai_api_key: openAiKey,
+            use_cloud_stream: String(useCloudStream)
         };
-        localStorage.setItem('smtp_config', JSON.stringify(smtpConfig));
-        localStorage.setItem('openai_api_key', openAiKey);
-        localStorage.setItem('use_cloud_stream', String(useCloudStream));
 
-        alert('Nastavení uloženo! ✅\nZměny se projeví v Kiosku.');
+        try {
+            await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+            alert('Nastavení uloženo do databáze! ✅');
+        } catch (e) {
+            alert('Chyba ukládání!');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleLogout = () => {
@@ -107,7 +125,7 @@ export default function ProfilePage() {
                     <Home size={20} />
                     <span>Zpět</span>
                 </Link>
-                <h1 className="text-2xl font-bold">Nastavení</h1>
+                <h1 className="text-2xl font-bold">Nastavení (Cloud DB)</h1>
                 <button onClick={handleLogout} className="p-3 bg-red-500/20 text-red-400 rounded-full hover:bg-red-500/30">
                     <LogOut size={20} />
                 </button>
@@ -170,17 +188,17 @@ export default function ProfilePage() {
                             className="w-full p-3 bg-slate-950 rounded-lg border border-slate-700 focus:border-purple-500 outline-none font-mono text-sm"
                             placeholder="sk-..."
                         />
-                        <p className="text-xs text-slate-600 mt-2">Klíč se ukládá pouze lokálně v prohlížeči.</p>
                     </div>
                 </div>
 
                 <div className="pt-6 border-t border-slate-800">
-                    <button onClick={handleSave} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/20 transition-all">
-                        <Save size={20} /> Uložit nastavení
+                    <button onClick={handleSave} disabled={loading} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-xl font-bold text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/20 transition-all">
+                        {loading ? <RefreshCw className="animate-spin" /> : <Save size={20} />}
+                        {loading ? 'Ukládám...' : 'Uložit nastavení'}
                     </button>
                     <p className="text-center text-xs text-slate-500 mt-4">
-                        Nastavení se ukládá pouze v tomto prohlížeči (LocalStorage). <br />
-                        Pokud používáte Gmail, musíte vygenerovat <b>App Password</b>.
+                        Nastavení se ukládá do cloud databáze. <br />
+                        Bude dostupné na všech zařízeních.
                     </p>
                 </div>
 
@@ -188,3 +206,4 @@ export default function ProfilePage() {
         </div>
     );
 }
+import { RefreshCw } from 'lucide-react'; 

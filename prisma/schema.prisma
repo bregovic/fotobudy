@@ -35,3 +35,10 @@ model Command {
   createdAt DateTime @default(now())
   processed Boolean  @default(false)
 }
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+

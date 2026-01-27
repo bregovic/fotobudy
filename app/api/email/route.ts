@@ -4,7 +4,7 @@ import nodemailer from 'nodemailer';
 
 export async function POST(req: NextRequest) {
     try {
-        const { email, photoUrl, smtpConfig } = await req.json();
+        const { email, photoUrl, smtpConfig: clientConfig } = await req.json();
 
         if (!email || !photoUrl) {
             return NextResponse.json({ error: 'Chybí email nebo fotka' }, { status: 400 });
@@ -21,34 +21,44 @@ export async function POST(req: NextRequest) {
         }
 
         // 2. Nastavení SMTP (Pošťák)
-        // Priorita: 1. Custom Config (z Profilu), 2. Environment Variables
         let transportConfig = null;
         let fromEmail = 'fotobuddy@example.com';
 
-        if (smtpConfig && smtpConfig.host && smtpConfig.user) {
-            // Použijeme nastavení z profilu
+        // POKUS 1: Config z DB (Priorita)
+        const dbSetting = await prisma.setting.findUnique({ where: { key: 'smtp_config' } });
+        let dbSmtp = null;
+        if (dbSetting) {
+            try { dbSmtp = JSON.parse(dbSetting.value); } catch { }
+        }
+
+        if (dbSmtp && dbSmtp.host && dbSmtp.user) {
             transportConfig = {
-                host: smtpConfig.host,
-                port: Number(smtpConfig.port) || 587,
+                host: dbSmtp.host,
+                port: Number(dbSmtp.port) || 587,
                 secure: false,
-                auth: {
-                    user: smtpConfig.user,
-                    pass: smtpConfig.pass,
-                },
+                auth: { user: dbSmtp.user, pass: dbSmtp.pass },
             };
-            fromEmail = smtpConfig.user;
-        } else if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-            // Fallback na ENV variables (Railway)
+            fromEmail = dbSmtp.user;
+        }
+        // POKUS 2: Config od klienta (Fallback, kdyby někdo používal starý frontend)
+        else if (clientConfig && clientConfig.host) {
+            transportConfig = {
+                host: clientConfig.host,
+                port: Number(clientConfig.port) || 587,
+                secure: false,
+                auth: { user: clientConfig.user, pass: clientConfig.pass },
+            };
+            fromEmail = clientConfig.user;
+        }
+        // POKUS 3: ENV variables
+        else if (process.env.SMTP_HOST) {
             transportConfig = {
                 host: process.env.SMTP_HOST,
                 port: Number(process.env.SMTP_PORT) || 587,
                 secure: false,
-                auth: {
-                    user: process.env.SMTP_USER,
-                    pass: process.env.SMTP_PASS,
-                },
+                auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
             };
-            fromEmail = process.env.SMTP_USER;
+            fromEmail = process.env.SMTP_USER || 'fotobuddy@example.com';
         }
 
         if (!transportConfig) {
@@ -63,19 +73,13 @@ export async function POST(req: NextRequest) {
             from: `"FotoBuddy 📸" <${fromEmail}>`,
             to: email,
             subject: 'Tvoje fotka z FotoBuddy! 🥳',
-            text: 'Ahoj! Tady je tvoje fotka z akce. Užij si ji!',
             html: `
                 <div style="font-family: sans-serif; text-align: center; padding: 20px;">
                     <h1>📸 Tady je tvůj úlovek!</h1>
                     <p>Díky, že ses stavil(a) ve fotokoutku.</p>
                 </div>
             `,
-            attachments: [
-                {
-                    filename: filename || 'foto.jpg',
-                    content: media.data,
-                },
-            ],
+            attachments: [{ filename: filename || 'foto.jpg', content: media.data }],
         });
 
         return NextResponse.json({ success: true });
