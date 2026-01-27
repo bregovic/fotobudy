@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Vrátíme obrázek s hlavičkou, aby se neukládal do cache
+    // @ts-ignore - Buffer is compatible at runtime but TS types mismatch in Next.js
     return new NextResponse(currentFrame, {
         headers: {
             'Content-Type': 'image/jpeg',
