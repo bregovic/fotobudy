@@ -15,6 +15,7 @@ export default function KioskPage() {
 
     // Konfigurovatelná IP adresa kamery (pro přístup z mobilu)
     const [cameraIp, setCameraIp] = useState(DEFAULT_IP);
+    const [useCloudStream, setUseCloudStream] = useState(false);
 
     // Auto-init logic
     useEffect(() => {
@@ -23,6 +24,12 @@ export default function KioskPage() {
             // Načíst uloženou IP
             const savedIp = localStorage.getItem('camera_ip');
             if (savedIp) setCameraIp(savedIp);
+            // Načíst cloud stream preferenci
+            const savedCloud = localStorage.getItem('use_cloud_stream');
+            if (savedCloud === 'true' || (window.location.protocol === 'https:' && window.location.hostname !== 'localhost')) {
+                // Pokud jsme na veřejné HTTPS doméně, defaultně zapneme cloud stream
+                setUseCloudStream(true);
+            }
         }
 
         fetch('/api/session', {
@@ -53,6 +60,11 @@ export default function KioskPage() {
         localStorage.setItem('camera_ip', ip);
     };
 
+    const saveCloud = (val: boolean) => {
+        setUseCloudStream(val);
+        localStorage.setItem('use_cloud_stream', String(val));
+    };
+
     const startCountdown = () => {
         console.log("Starting countdown...");
         if (processingRef.current) return;
@@ -74,22 +86,40 @@ export default function KioskPage() {
     };
 
     const takePhoto = async () => {
-        console.log("Taking photo...");
-        try {
-            // Trigger Bridge (Use configured IP)
-            const res = await fetch(`http://${cameraIp}:5555/shoot`, { method: 'POST' });
-            const data = await res.json();
-            if (data.success) {
-                setLastPhoto(`http://${cameraIp}:5555${data.url}`);
-                setStatus('review');
+        console.log("Taking photo sequence...");
+
+        if (useCloudStream) {
+            // Provizorní řešení - zkusíme hitnout Bridge přímo (pro případ že jsme na stejné wifi)
+            // TODO: Implementovat Cloud Trigger API
+            try {
+                const res = await fetch(`http://${cameraIp}:5555/shoot`, { method: 'POST' });
+                const data = await res.json();
+                // Pro cloud stream nemůžeme použít lokální URL pro review, musíme počkat na upload
+                // Zatím jen fallback
+                if (data.success) {
+                    setLastPhoto(data.url.startsWith('http') ? data.url : `http://${cameraIp}:5555${data.url}`);
+                    setStatus('review');
+                }
+            } catch (e) {
+                alert('Focení v Cloud režimu zatím vyžaduje být na stejné WiFi (funkce Cloud Trigger se připravuje). Spusťte focení na počítači.');
+                setStatus('idle');
             }
-        } catch (e) {
-            console.error(e);
-            alert(`Nepodařilo se spojit s kamerou na ${cameraIp}.\nZkontrolujte IP adresu v nastavení a zda běží Bridge.`);
-            setStatus('idle');
-        } finally {
-            processingRef.current = false;
+        } else {
+            try {
+                // Trigger Bridge (Use configured IP)
+                const res = await fetch(`http://${cameraIp}:5555/shoot`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    setLastPhoto(`http://${cameraIp}:5555${data.url}`);
+                    setStatus('review');
+                }
+            } catch (e) {
+                console.error(e);
+                alert(`Nepodařilo se spojit s kamerou na ${cameraIp}.\nZkontrolujte IP adresu v nastavení a zda běží Bridge.`);
+                setStatus('idle');
+            }
         }
+        processingRef.current = false;
     };
 
     const printPhoto = async () => {
@@ -111,12 +141,12 @@ export default function KioskPage() {
         <div className="relative w-full h-full bg-gray-100 overflow-hidden flex flex-col items-center justify-center">
 
             {/* HTTPS Warning Overlay - only show if using localhost on https */}
-            {isHttps && cameraIp === '127.0.0.1' && status === 'idle' && (
+            {isHttps && !useCloudStream && cameraIp === '127.0.0.1' && status === 'idle' && (
                 <div className="absolute top-4 left-4 z-40 bg-yellow-100 text-yellow-800 p-3 rounded-xl flex items-center gap-3 text-sm shadow-sm max-w-sm">
                     <AlertTriangle size={20} />
                     <div>
                         <b>Používáte HTTPS</b><br />
-                        Kamera běží lokálně. Pokud to zlobí, otevřete stránku přes HTTP nebo nastavte veřejnou IP tunelu.
+                        Pro fungování kamery zapněte v nastavení <b>Cloud Stream</b> nebo použijte localhost.
                     </div>
                 </div>
             )}
@@ -127,19 +157,18 @@ export default function KioskPage() {
                     <img src={lastPhoto} className="w-full h-full object-contain bg-slate-900" />
                 ) : (
                     <div className="w-full h-full relative">
-                        {/* Live Stream MJPEG (Use Configured IP) */}
+                        {/* Live Stream MJPEG or Cloud Stream */}
                         <img
-                            src={`http://${cameraIp}:5521/live`}
+                            src={useCloudStream ? '/api/stream' : `http://${cameraIp}:5521/live`}
                             className="w-full h-full object-cover"
                             onError={(e) => {
+                                if (useCloudStream) return;
                                 const target = e.currentTarget;
                                 // Fallbacks logic with dynamic IP
                                 if (target.src.includes('5521')) {
                                     target.src = `http://${cameraIp}:5520/liveview.jpg`;
                                 }
                                 else if (target.src.includes('5520')) {
-                                    // As a last resort, try just the base IP if the user provided a direct stream URL? No, keep it simple.
-                                    // Just valid ports.
                                     target.style.display = 'none';
                                 }
                             }}
@@ -148,10 +177,11 @@ export default function KioskPage() {
                         {/* Fallback help text */}
                         <div className="absolute inset-0 -z-10 flex items-center justify-center text-slate-500 text-center p-4">
                             <div>
-                                <p className="font-bold mb-2">Hledám signál kamery...</p>
-                                <p className="font-mono text-sm bg-slate-200 px-2 py-1 rounded mb-2">{cameraIp}</p>
-                                <p className="text-sm">Zkouším porty 5521, 5520.</p>
-                                <p className="text-xs mt-2 opacity-70">Běží DigiCamControl (jako Správce)?</p>
+                                <p className="font-bold mb-2">{useCloudStream ? 'Čekám na Cloud Stream...' : 'Hledám signál kamery...'}</p>
+                                {!useCloudStream && <p className="font-mono text-sm bg-slate-200 px-2 py-1 rounded mb-2">{cameraIp}</p>}
+                                <p className="text-sm">
+                                    {useCloudStream ? 'Ujistěte se, že na PC běží Bridge a vysílá.' : 'Zkouším porty 5521, 5520.'}
+                                </p>
                             </div>
                         </div>
 
@@ -180,21 +210,37 @@ export default function KioskPage() {
                         </div>
                         <div className="space-y-4">
 
-                            {/* IP Config */}
-                            <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl">
-                                <h3 className="font-semibold mb-2 flex items-center gap-2">🔗 IP Adresa Kamery</h3>
-                                <input
-                                    type="text"
-                                    value={cameraIp}
-                                    onChange={(e) => saveIp(e.target.value)}
-                                    className="w-full p-2 border border-slate-300 rounded-lg font-mono text-sm"
-                                    placeholder="např. 192.168.0.105"
-                                />
-                                <p className="text-xs text-slate-500 mt-2">
-                                    Pro místní PC zadejte <b>127.0.0.1</b>.<br />
-                                    Pro ovládání z mobilu zadejte <b>IP adresu počítače</b>.
-                                </p>
+                            {/* Cloud Stream Toggle */}
+                            <div className="p-4 bg-purple-50 border border-purple-100 rounded-xl flex items-center justify-between">
+                                <div>
+                                    <h3 className="font-semibold mb-1">☁️ Cloud Stream</h3>
+                                    <p className="text-xs text-slate-500">Pro přístup z internetu (bez kabelu/Wifi)</p>
+                                </div>
+                                <button
+                                    onClick={() => saveCloud(!useCloudStream)}
+                                    className={`w-12 h-6 rounded-full transition-colors relative ${useCloudStream ? 'bg-purple-600' : 'bg-slate-300'}`}
+                                >
+                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${useCloudStream ? 'translate-x-6' : 'translate-x-1'}`}></div>
+                                </button>
                             </div>
+
+                            {/* IP Config - show only if cloud stream is OFF */}
+                            {!useCloudStream && (
+                                <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl">
+                                    <h3 className="font-semibold mb-2 flex items-center gap-2">🔗 IP Adresa Kamery</h3>
+                                    <input
+                                        type="text"
+                                        value={cameraIp}
+                                        onChange={(e) => saveIp(e.target.value)}
+                                        className="w-full p-2 border border-slate-300 rounded-lg font-mono text-sm"
+                                        placeholder="např. 192.168.0.105"
+                                    />
+                                    <p className="text-xs text-slate-500 mt-2">
+                                        Pro místní PC zadejte <b>127.0.0.1</b>.<br />
+                                        Pro ovládání z mobilu zadejte <b>IP adresu počítače</b>.
+                                    </p>
+                                </div>
+                            )}
 
                             <div className="p-4 bg-slate-50 rounded-xl">
                                 <h3 className="font-semibold mb-2">Výplň</h3>

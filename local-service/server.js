@@ -83,10 +83,68 @@ app.post('/print', (req, res) => {
     res.json({ success: true, message: 'Odesláno na tisk' });
 });
 
+// --- CLOUD STREAMING KONFIGURACE ---
+// Adresa tvého veřejného serveru na Railway
+const CLOUD_API_URL = 'https://fotobuddy.up.railway.app/api/stream';
+let isStreaming = false;
+
+// ... (zbytek kódu zůstává) ...
+
 app.listen(PORT, () => {
     console.log(`\n📷 FotoBuddy Bridge (HTTP Trigger Mode) běží na http://localhost:${PORT}`);
     console.log(`ℹ️  Ujistěte se, že DigiCamControl ukládá fotky do:\n   ${SAVE_DIR}`);
+
+    // Automaticky spustit streamování do cloudu
+    startCloudStream();
 });
+
+async function startCloudStream() {
+    if (isStreaming) return;
+    isStreaming = true;
+    console.log(`[STREAM] Začínám vysílat na: ${CLOUD_API_URL}`);
+
+    // Smyčka pro odesílání snímků
+    const loop = async () => {
+        try {
+            // 1. Stáhnout snímek z lokální kamery
+            // Použijeme stream 5520/liveview.jpg (statický snímek je pro upload lepší než MJPEG stream)
+            const localUrl = 'http://127.0.0.1:5520/liveview.jpg';
+
+            // Poznámka: Musíme použít http.get a pak to poslat dál
+            // Pro jednoduchost a rychlost použijeme fetch (v Node 18+ je nativní, ale v 16 ne).
+            // Zkusíme jednoduchý fetch, pokud selže, dáme fallback.
+
+            const frameRes = await fetch(localUrl);
+            if (!frameRes.ok) throw new Error('Kamera nedostupná');
+
+            const blob = await frameRes.blob();
+
+            // 2. Odeslat na cloud
+            // Pošleme to jako binární body
+            // Ignorujeme chyby SSL certifikátu pro localhost, ale pro cloud je to OK
+            const uploadRes = await fetch(CLOUD_API_URL, {
+                method: 'POST',
+                body: blob,
+                headers: { 'Content-Type': 'image/jpeg' }
+            });
+
+            if (!uploadRes.ok) {
+                // console.warn('[STREAM] Upload failed:', uploadRes.status);
+            }
+
+        } catch (e) {
+            // Chyby vypisujeme jen občas, ať nespamujeme konzoli
+            if (Math.random() > 0.95) console.warn('[STREAM] Chyba smyčky (kamera vypnutá?):', e.message);
+        }
+
+        // Čekáme chviličku (např. 100ms = 10 FPS), abychom nezahltili síť
+        setTimeout(loop, 200);
+    };
+
+    loop();
+}
+
+// ... (zbytek) ...
 
 // Funkce pro čekání na nový soubor
 function waitForNewFile(dir, afterTime, timeoutMs) {
