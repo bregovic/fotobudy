@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send, Trash2, CameraOff, Home, Palette, Pipette, MousePointer2, Wand2 } from 'lucide-react'; // Wand2 icon added
+import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send, Trash2, CameraOff, Home, Palette, Pipette, MousePointer2, Wand2, Layout } from 'lucide-react';
 import Link from 'next/link';
 
 const SESSION_ID = 'main';
@@ -13,9 +13,10 @@ type SessionSettings = {
     isPrivate: boolean;
 
     // Creative
-    selectedBg: string | null;  // URL
-    selectedSticker: string | null; // URL
-    chromaKeyColor: string; // HEX
+    selectedBg: string | null;
+    selectedSticker: string | null;
+    stickerPosition: 'br' | 'bl' | 'tr' | 'tl' | 'center' | 'cover'; // Nové nastavení pozice
+    chromaKeyColor: string;
     chromaTolerance: number;
 };
 
@@ -44,7 +45,8 @@ export default function KioskPage() {
         isPrivate: false,
         selectedBg: null,
         selectedSticker: null,
-        chromaKeyColor: '#00FF00', // Green
+        stickerPosition: 'br', // Default: Bottom Right
+        chromaKeyColor: '#00FF00',
         chromaTolerance: 100
     });
 
@@ -104,7 +106,6 @@ export default function KioskPage() {
                 // 2. New Photo Detection
                 if (data.latest && data.latest.createdAt) {
                     const photoTime = new Date(data.latest.createdAt).getTime();
-                    // Ignorujeme staré fotky při startu aplikace, zajímají nás jen nové (např. posledních 30s)
                     const now = Date.now();
 
                     if ((now - photoTime) < 30000 && photoTime > lastSeenTimeRef.current) {
@@ -121,11 +122,6 @@ export default function KioskPage() {
     const processNewPhoto = async (originalUrl: string) => {
         setStatus('processing');
         processingRef.current = false;
-
-        // Pokud nejsou aktivní žádné efekty, jen zobrazíme (ale pozor, pokud voláme manuálně "Apply", asi chceme i bez efektů udělat kopii/refresh? 
-        // Ne, pokud nejsou efekty, jen přepneme na review.)
-        // Ale POZOR: Pokud uživatel klikne na "Apply" a nemám efekty, tak se nic nestane, což je divné.
-        // Takže kontrolu provedu jen při auto-detekci. Pokud voláme manuálně, tak se provede kód níže.
 
         showToast('Aplikuji efekty... ✨');
         try {
@@ -176,15 +172,50 @@ export default function KioskPage() {
                 ctx.globalCompositeOperation = 'source-over';
             }
 
-            // 3. Sticker
+            // 3. Sticker Logic with Position
             if (sessionSettings.selectedSticker) {
                 const stickerImg = new Image();
                 stickerImg.crossOrigin = "Anonymous";
                 stickerImg.src = sessionSettings.selectedSticker;
                 await new Promise(r => stickerImg.onload = r);
-                const sWidth = canvas.width * 0.3;
-                const sHeight = (stickerImg.height / stickerImg.width) * sWidth;
-                ctx.drawImage(stickerImg, canvas.width - sWidth - 50, canvas.height - sHeight - 50, sWidth, sHeight);
+
+                let sWidth = canvas.width * 0.3; // Default 30% width
+                let sHeight = (stickerImg.height / stickerImg.width) * sWidth;
+                let sX = 0;
+                let sY = 0;
+                const margin = 50;
+
+                // Position Logic
+                switch (sessionSettings.stickerPosition) {
+                    case 'br': // Bottom Right
+                        sX = canvas.width - sWidth - margin;
+                        sY = canvas.height - sHeight - margin;
+                        break;
+                    case 'bl': // Bottom Left
+                        sX = margin;
+                        sY = canvas.height - sHeight - margin;
+                        break;
+                    case 'tr': // Top Right
+                        sX = canvas.width - sWidth - margin;
+                        sY = margin;
+                        break;
+                    case 'tl': // Top Left
+                        sX = margin;
+                        sY = margin;
+                        break;
+                    case 'center':
+                        sX = (canvas.width - sWidth) / 2;
+                        sY = (canvas.height - sHeight) / 2;
+                        break;
+                    case 'cover': // Full Screen (Frame)
+                        sWidth = canvas.width;
+                        sHeight = canvas.height;
+                        sX = 0;
+                        sY = 0;
+                        break;
+                }
+
+                ctx.drawImage(stickerImg, sX, sY, sWidth, sHeight);
             }
 
             // 4. B&W
@@ -210,10 +241,7 @@ export default function KioskPage() {
                     setLastPhoto(uploadData.url);
                     setStatus('review');
                     if (sessionSettings.email && !originalUrl.startsWith('blob:')) {
-                        // AutoMail jen pro nové fotky? Pro jednoduchost posíláme vždy, pokud je nastaveno.
-                        // Ale pozor, aby to nefloodovalo.
-                        // Zde necháme logiku auto-emailu jen pokud to bylo vyvoláno auto procesem?
-                        // Pro jednoduchost: Auto-Email se pošle, pokud je vyplněn v nastavení.
+                        // Optional Auto-Email logic here
                     }
                     showToast('Efekty aplikovány! ✨');
                 } else {
@@ -239,19 +267,12 @@ export default function KioskPage() {
         canvas.height = img.naturalHeight;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-
-        // Draw image to canvas to read pixel
         ctx.drawImage(img, 0, 0);
-
-        // Calculate position relative to natural size
         const rect = img.getBoundingClientRect();
         const x = (e.clientX - rect.left) * (img.naturalWidth / rect.width);
         const y = (e.clientY - rect.top) * (img.naturalHeight / rect.height);
-
         const p = ctx.getImageData(x, y, 1, 1).data;
-        // RGB to Hex
         const hex = "#" + ((1 << 24) + (p[0] << 16) + (p[1] << 8) + p[2]).toString(16).slice(1).toUpperCase();
-
         setSessionSettings({ ...sessionSettings, chromaKeyColor: hex });
         setIsPickingColor(false);
         showToast(`Barva vybrána: ${hex}`);
@@ -295,6 +316,7 @@ export default function KioskPage() {
         if (confirmDeleteId !== id) { setConfirmDeleteId(id); return; }
         await fetch('/api/media/delete', { method: 'POST', body: JSON.stringify({ url }) });
         setGalleryPhotos(prev => prev.filter(p => p.id !== id));
+        setConfirmDeleteId(null);
     };
     const printPhoto = async () => {
         if (!lastPhoto) return; showToast('Tisk... 🖨️');
@@ -363,22 +385,10 @@ export default function KioskPage() {
 
                                     {/* PREVIEW + DROPPER */}
                                     <div className="mb-4 relative rounded-lg overflow-hidden border border-slate-600 bg-black aspect-video group">
-                                        <img
-                                            src={streamUrl}
-                                            crossOrigin="anonymous"
-                                            className={`w-full h-full object-cover ${isPickingColor ? 'cursor-crosshair' : ''}`}
-                                            onClick={handlePreviewClick}
-                                        />
-                                        {isPickingColor && (
-                                            <div className="absolute inset-0 bg-green-500/20 pointer-events-none flex items-center justify-center text-green-300 font-bold border-4 border-green-500 animate-pulse">
-                                                KLIKNI KAMKOLIV
-                                            </div>
-                                        )}
+                                        <img src={streamUrl} crossOrigin="anonymous" className={`w-full h-full object-cover ${isPickingColor ? 'cursor-crosshair' : ''}`} onClick={handlePreviewClick} />
+                                        {isPickingColor && <div className="absolute inset-0 bg-green-500/20 pointer-events-none flex items-center justify-center text-green-300 font-bold border-4 border-green-500 animate-pulse">KLIKNI KAMKOLIV</div>}
                                         <div className="absolute bottom-2 right-2">
-                                            <button
-                                                onClick={() => setIsPickingColor(!isPickingColor)}
-                                                className={`p-2 rounded-full shadow-lg flex items-center gap-2 text-xs font-bold transition-all ${isPickingColor ? 'bg-green-500 text-black scale-110' : 'bg-white text-black hover:bg-slate-200'}`}
-                                            >
+                                            <button onClick={() => setIsPickingColor(!isPickingColor)} className={`p-2 rounded-full shadow-lg flex items-center gap-2 text-xs font-bold transition-all ${isPickingColor ? 'bg-green-500 text-black scale-110' : 'bg-white text-black hover:bg-slate-200'}`}>
                                                 <MousePointer2 size={16} /> {isPickingColor ? 'Vybírám...' : 'Kapátko'}
                                             </button>
                                         </div>
@@ -393,16 +403,14 @@ export default function KioskPage() {
                                             </div>
                                         </div>
                                         <div>
-                                            <div className="flex justify-between text-sm mb-1">
-                                                <span>Tolerance</span>
-                                                <span>{sessionSettings.chromaTolerance}</span>
-                                            </div>
+                                            <div className="flex justify-between text-sm mb-1"><span>Tolerance</span><span>{sessionSettings.chromaTolerance}</span></div>
                                             <input type="range" min="10" max="250" value={sessionSettings.chromaTolerance} onChange={e => setSessionSettings({ ...sessionSettings, chromaTolerance: Number(e.target.value) })} className="w-full accent-green-500" />
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                            {/* Graphic Selection (Backgrounds & Stickers) */}
+
+                            {/* Creative Selection */}
                             <div className="space-y-6">
                                 <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
                                     <h3 className="font-semibold mb-4 text-green-400">🖼️ Pozadí</h3>
@@ -412,7 +420,23 @@ export default function KioskPage() {
                                     </div>
                                 </div>
                                 <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
-                                    <h3 className="font-semibold mb-4 text-pink-400">🦄 Samolepka</h3>
+                                    <h3 className="font-semibold mb-4 text-pink-400 flex justify-between items-center">
+                                        <span>🦄 Samolepka</span>
+                                    </h3>
+
+                                    {/* Position Selector */}
+                                    <div className="mb-4 flex gap-1 p-1 bg-slate-900 rounded-lg">
+                                        {([['tl', 'Top L'], ['tr', 'Top R'], ['center', 'Center'], ['bl', 'Bot L'], ['br', 'Bot R'], ['cover', 'Cover']] as const).map(([pos, label]) => (
+                                            <button
+                                                key={pos}
+                                                onClick={() => setSessionSettings(s => ({ ...s, stickerPosition: pos as any }))}
+                                                className={`flex-1 py-1 text-[10px] font-bold rounded ${sessionSettings.stickerPosition === pos ? 'bg-pink-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+
                                     <div className="grid grid-cols-4 gap-2">
                                         <div onClick={() => setSessionSettings({ ...sessionSettings, selectedSticker: null })} className={`aspect-square bg-slate-900 border-2 rounded cursor-pointer flex items-center justify-center text-xs ${sessionSettings.selectedSticker === null ? 'border-pink-500' : 'border-transparent'}`}>Nic</div>
                                         {assets.filter(a => a.type === 'STICKER').map(a => (<img key={a.id} src={a.url} onClick={() => setSessionSettings({ ...sessionSettings, selectedSticker: a.url })} className={`w-full aspect-square object-contain bg-slate-900 rounded cursor-pointer border-2 ${sessionSettings.selectedSticker === a.url ? 'border-pink-500' : 'border-transparent'}`} />))}
@@ -429,17 +453,12 @@ export default function KioskPage() {
                 <Link href="/" className="p-3 bg-white/10 text-white rounded-full backdrop-blur-md flex items-center justify-center hover:bg-white/20"><Home size={24} /></Link>
             </div>
 
-            {/* APPLY EFFECT BUTTON (Review Mode) */}
+            {/* APPLY EFFECT BUTTON */}
             {status === 'review' && lastPhoto && (
                 <div className="absolute top-4 right-4 z-50 animate-in fade-in slide-in-from-top-4">
-                    <button
-                        onClick={() => processNewPhoto(lastPhoto)}
-                        className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-full font-bold shadow-2xl transition-transform active:scale-95"
-                    >
-                        <Wand2 size={20} />
-                        Upravit / Aplikovat
+                    <button onClick={() => processNewPhoto(lastPhoto)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-full font-bold shadow-2xl transition-transform active:scale-95">
+                        <Wand2 size={20} /> Upravit / Aplikovat
                     </button>
-                    <div className="text-white text-xs text-center mt-2 drop-shadow-md">Stačí vybrat efekt v nastavení ⚙️</div>
                 </div>
             )}
 
@@ -464,15 +483,27 @@ export default function KioskPage() {
             </div>
             {toastMessage && <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[60] bg-black/80 text-white px-6 py-3 rounded-full">{toastMessage}</div>}
 
-            {/* Gallery & Email Modals */}
+            {/* Gallery Modal with DELETE BUTTONS */}
             {showGallery && (
                 <div className="absolute inset-0 z-50 bg-black/90 flex flex-col p-8">
                     <button onClick={() => setShowGallery(false)} className="absolute top-4 right-4 p-4 text-white"><X size={32} /></button>
                     <div className="grid grid-cols-4 gap-4 overflow-y-auto mt-10">
-                        {galleryPhotos.map(p => <img key={p.id} src={p.url} onClick={() => { setLastPhoto(p.url); setStatus('review'); setShowGallery(false); }} className="bg-slate-800" />)}
+                        {galleryPhotos.map(p => (
+                            <div key={p.id} className="relative group aspect-video bg-slate-800 rounded-lg overflow-hidden border border-slate-700">
+                                <img src={p.url} onClick={() => { setLastPhoto(p.url); setStatus('review'); setShowGallery(false); }} className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity" />
+                                <button
+                                    onClick={(e) => deletePhoto(p.id, p.url, e)}
+                                    className={`absolute top-2 right-2 p-2 rounded-full text-white bg-black/50 hover:bg-red-600 transition-colors ${confirmDeleteId === p.id ? 'bg-red-600' : ''}`}
+                                >
+                                    {confirmDeleteId === p.id ? <Trash2 size={20} /> : <X size={20} />}
+                                </button>
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}
+
+            {/* Email Modal ... (unchanged) */}
             {showEmailModal && (
                 <div className="absolute inset-0 z-50 bg-black/60 flex items-center justify-center p-8">
                     <div className="bg-slate-900 p-8 rounded-xl w-full max-w-md space-y-4">
