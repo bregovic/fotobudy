@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-// Používáme relativní cestu, aby to fungovalo vždy (i bez aliasů)
 import { prisma } from '../../../../lib/prisma';
 
-export async function GET(req: NextRequest, { params }: { params: { filename: string } }) {
-    const filename = params.filename;
+// Next.js 15+ Change: context.params is now a Promise!
+export async function GET(req: NextRequest, context: { params: Promise<{ filename: string }> }) {
+    // Musíme počkat na parametry
+    const { filename } = await context.params;
 
     try {
         const media = (await prisma.media.findFirst({
