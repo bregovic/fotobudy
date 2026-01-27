@@ -21,7 +21,7 @@ export default function KioskPage() {
     // Configuration
     const [cameraIp, setCameraIp] = useState(DEFAULT_IP);
     const [useCloudStream, setUseCloudStream] = useState(false);
-    const [isConfigured, setIsConfigured] = useState(false); // Prevence Mixed Content
+    const [isConfigured, setIsConfigured] = useState(false);
 
     const lastSeenTimeRef = useRef<number>(0);
 
@@ -48,7 +48,7 @@ export default function KioskPage() {
                 setUseCloudStream(true);
                 if (isRailway) localStorage.setItem('use_cloud_stream', 'true');
             }
-            setIsConfigured(true); // Jsme připraveni, můžeme renderovat stream URL
+            setIsConfigured(true);
         }
         fetch('/api/session', {
             method: 'POST',
@@ -229,7 +229,9 @@ export default function KioskPage() {
             {status === 'idle' && processingRef.current && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-50 pointer-events-auto"
                     onClick={() => {
-                        if (confirm('Zrušit ukládání?')) processingRef.current = false;
+                        // Reset bez dotazů
+                        processingRef.current = false;
+                        showToast('Ukládání zrušeno.');
                     }}>
                     <div className="text-white font-bold text-xl animate-pulse">Ukládání...</div>
                 </div>
