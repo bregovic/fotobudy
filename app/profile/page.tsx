@@ -53,7 +53,14 @@ export default function ProfilePage() {
                 if (data.openai_api_key) setOpenAiKey(data.openai_api_key);
 
                 // Cloud
-                if (data.use_cloud_stream) setUseCloudStream(data.use_cloud_stream === 'true');
+                if (data.use_cloud_stream !== undefined && data.use_cloud_stream !== null && data.use_cloud_stream !== '') {
+                    setUseCloudStream(data.use_cloud_stream === 'true');
+                } else {
+                    // Fallback visual same as Kiosk logic
+                    if (window.location.protocol === 'https:' || window.location.hostname.includes('railway.app')) {
+                        setUseCloudStream(true);
+                    }
+                }
             })
             .catch(console.error);
 
