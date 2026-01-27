@@ -7,15 +7,20 @@ export async function GET(req: NextRequest, context: { params: Promise<{ filenam
     const { filename } = await context.params;
 
     try {
-        const media = (await prisma.media.findFirst({
-            where: {
-                url: { endsWith: filename }
-            },
-            orderBy: { createdAt: 'desc' }
-        })) as any;
+        // 1. Hledat v Media (Fotky)
+        let media: any = await prisma.media.findFirst({
+            where: { url: { endsWith: filename } }
+        });
+
+        // 2. Pokud není fotka, hledat v Assetech (Pozadí/Stickery)
+        if (!media) {
+            media = await prisma.asset.findFirst({
+                where: { url: { endsWith: filename } }
+            });
+        }
 
         if (!media || !media.data) {
-            return new NextResponse('Not found', { status: 404 });
+            return new NextResponse('Not Found', { status: 404 });
         }
 
         return new NextResponse(media.data, {

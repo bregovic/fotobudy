@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Home, Save, Lock, LogOut } from 'lucide-react';
+import { Home, Save, Lock, LogOut, RefreshCw, X, Image as ImageIcon } from 'lucide-react';
 
 export default function ProfilePage() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -13,23 +13,27 @@ export default function ProfilePage() {
     const [smtpUser, setSmtpUser] = useState('');
     const [smtpPass, setSmtpPass] = useState('');
 
+    // Email Template Settings
+    const [emailSubject, setEmailSubject] = useState('Tvoje fotka z FotoBuddy! 🥳');
+    const [emailBody, setEmailBody] = useState('Ahoj! Tady je tvoje fotka z akce. Užij si ji!');
+
     // AI Settings
     const [openAiKey, setOpenAiKey] = useState('');
 
     // System Settings
     const [useCloudStream, setUseCloudStream] = useState(false);
 
-    // Email Template Settings
-    const [emailSubject, setEmailSubject] = useState('Tvoje fotka z FotoBuddy! 🥳');
-    const [emailBody, setEmailBody] = useState('Ahoj! Tady je tvoje fotka z akce. Užij si ji!');
+    // Assets (Graphics)
+    const [assets, setAssets] = useState<any[]>([]);
 
     // Loading State
     const [loading, setLoading] = useState(false);
 
-    // Načtení z DB (po přihlášení nebo hned? Z bezpečnostních důvodů až po přihlášení, ale Kiosk to potřebuje. 
-    // Pro jednoduchost: API je veřejné pro čtení (kvůli Kiosku), formulář je skrytý.
+    // Načtení z DB
     useEffect(() => {
         setLoading(true);
+
+        // 1. Settings
         fetch('/api/settings')
             .then(res => res.json())
             .then(data => {
@@ -40,7 +44,7 @@ export default function ProfilePage() {
                     setSmtpUser(data.smtp_config.user || '');
                     setSmtpPass(data.smtp_config.pass || '');
                 }
-                // Email Template
+                // Template
                 if (data.email_template) {
                     setEmailSubject(data.email_template.subject || 'Tvoje fotka z FotoBuddy! 🥳');
                     setEmailBody(data.email_template.body || 'Ahoj! Tady je tvoje fotka z akce. Užij si ji!');
@@ -51,9 +55,54 @@ export default function ProfilePage() {
                 // Cloud
                 if (data.use_cloud_stream) setUseCloudStream(data.use_cloud_stream === 'true');
             })
-            .catch(console.error)
-            .finally(() => setLoading(false));
+            .catch(console.error);
+
+        // 2. Assets
+        fetchAssets();
+
+        setLoading(false);
     }, []);
+
+    const fetchAssets = () => {
+        fetch('/api/assets')
+            .then(res => res.json())
+            .then(data => {
+                if (Array.isArray(data)) setAssets(data);
+            })
+            .catch(console.error);
+    };
+
+    const uploadAsset = async (e: React.ChangeEvent<HTMLInputElement>, type: string) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('type', type);
+
+        try {
+            const res = await fetch('/api/assets', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.success) {
+                fetchAssets(); // Refresh list
+                alert('Nahráno! ✅');
+            } else {
+                alert('Chyba nahrávání! ❌');
+            }
+        } catch (e) { console.error(e); }
+    };
+
+    const deleteAsset = async (id: string) => {
+        if (!confirm('Opravdu smazat?')) return;
+        try {
+            await fetch('/api/assets', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
+            setAssets(prev => prev.filter(a => a.id !== id));
+        } catch (e) { alert('Chyba mazání'); }
+    };
 
     const handleLogin = (e: React.FormEvent) => {
         e.preventDefault();
@@ -163,6 +212,45 @@ export default function ProfilePage() {
                     </div>
                 </div>
 
+                {/* GRAPHICS MANAGER Section */}
+                <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-yellow-400 border-b border-yellow-500/30 pb-2">🎨 Správce Grafiky</h3>
+
+                    {/* Backgrounds */}
+                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                        <label className="block text-sm font-bold text-slate-300 mb-4">🖼️ Pozadí (pro klíčování)</label>
+                        <div className="grid grid-cols-3 gap-2 mb-4">
+                            {assets.filter(a => a.type === 'BACKGROUND').map(asset => (
+                                <div key={asset.id} className="relative group aspect-video bg-slate-800 rounded-lg overflow-hidden border border-slate-700">
+                                    <img src={asset.url} className="w-full h-full object-cover" />
+                                    <button onClick={() => deleteAsset(asset.id)} className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={12} /></button>
+                                </div>
+                            ))}
+                            <label className="flex flex-col items-center justify-center bg-slate-900 hover:bg-slate-800 border border-dashed border-slate-700 rounded-lg cursor-pointer transition-colors aspect-video hover:border-yellow-500 hover:text-yellow-500">
+                                <span className="text-2xl">+</span>
+                                <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadAsset(e, 'BACKGROUND')} />
+                            </label>
+                        </div>
+                    </div>
+
+                    {/* Stickers */}
+                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                        <label className="block text-sm font-bold text-slate-300 mb-4">🦄 Samolepky / Loga</label>
+                        <div className="grid grid-cols-4 gap-2">
+                            {assets.filter(a => a.type === 'STICKER').map(asset => (
+                                <div key={asset.id} className="relative group aspect-square bg-slate-800 rounded-lg overflow-hidden border border-slate-700 p-2">
+                                    <img src={asset.url} className="w-full h-full object-contain" />
+                                    <button onClick={() => deleteAsset(asset.id)} className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={12} /></button>
+                                </div>
+                            ))}
+                            <label className="flex flex-col items-center justify-center bg-slate-900 hover:bg-slate-800 border border-dashed border-slate-700 rounded-lg cursor-pointer transition-colors aspect-square hover:border-yellow-500 hover:text-yellow-500">
+                                <span className="text-2xl">+</span>
+                                <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadAsset(e, 'STICKER')} />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
                 {/* EMAIL TEMPLATE Section */}
                 <div className="space-y-4">
                     <h3 className="text-lg font-semibold text-pink-400 border-b border-pink-500/30 pb-2">💌 Šablona Emailu</h3>
@@ -243,4 +331,3 @@ export default function ProfilePage() {
         </div>
     );
 }
-import { RefreshCw } from 'lucide-react'; 

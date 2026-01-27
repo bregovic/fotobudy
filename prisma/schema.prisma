@@ -42,3 +42,13 @@ model Setting {
   updatedAt DateTime @updatedAt
 }
 
+model Asset {
+  id        String   @id @default(cuid())
+  type      String   // "BACKGROUND", "STICKER"
+  url       String
+  name      String
+  data      Bytes
+  createdAt DateTime @default(now())
+}
+
+
