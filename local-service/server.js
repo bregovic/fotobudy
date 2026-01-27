@@ -19,6 +19,11 @@ const CLOUD_API_URL = 'https://cvak.up.railway.app'; // Základní adresa cloudu
 const CLOUD_STREAM_URL = `${CLOUD_API_URL}/api/stream`;
 const CLOUD_UPLOAD_URL = `${CLOUD_API_URL}/api/media/upload`;
 
+// --- EFEKTIVITA A KVALITA ---
+// Počet snímků za sekundu pro cloud stream.
+// 2 FPS je ideální kompromis (šetří data na hotspotu, ale stále je vidět pohyb).
+const STREAM_FPS = 2;
+
 let isStreaming = false;
 let isCapturing = false;
 
@@ -58,15 +63,14 @@ app.post('/shoot', async (req, res) => {
         const foundFile = await waitForNewFile(SAVE_DIR, startTime, 15000);
         console.log(`[BRIDGE] Fotka nalezena: ${foundFile}`);
 
-        // 3. UPLOAD NA CLOUD (Novinka!)
-        // Musíme fotku poslat na server, aby byla vidět na webu
+        // 3. UPLOAD NA CLOUD
         const publicUrl = await uploadToCloud(foundFile);
         console.log(`[BRIDGE] Fotka nahrána na cloud: ${publicUrl}`);
 
         res.json({
             success: true,
             filename: foundFile,
-            url: publicUrl // Vracíme už veřejnou URL z cloudu
+            url: publicUrl
         });
 
     } catch (e) {
@@ -77,31 +81,21 @@ app.post('/shoot', async (req, res) => {
     }
 });
 
-// Funkce pro upload souboru na Cloud (multipart upload simulation)
 function uploadToCloud(filename) {
     return new Promise((resolve, reject) => {
         const filePath = path.join(SAVE_DIR, filename);
-        const fileContent = fs.readFileSync(filePath);
 
-        // Jednoduchý POST upload (vylepšete podle potřeby API)
-        // Zde předpokládáme, že server má endpoint /api/media/upload
-        // Pro zjednodušení použijeme base64 JSON, pokud nemáme multipart knihovnu
-        // ALE! Server /api/media/upload čeká FormData. 
-        // V Node.js bez knihoven je FormData peklo.
-        // Zkusíme poslat jako RAW body a server to musí pochopit, nebo použijeme 'curl' přes exec, což je spolehlivější hack.
+        // Použijeme curl pro upload
+        const curlCmd = `curl -X POST -F "type=PHOTO" -F "file=@${filePath}" ${CLOUD_UPLOAD_URL}`;
 
-        // HACK: Použijeme 'curl' pro upload, protože psát multipart/form-data v čistém Node.js je na dlouho.
-        // Předpokládáme, že Windows má curl (Win10+ má).
-
-        const curlCmd = `curl -X POST -F "file=@${filePath}" ${CLOUD_UPLOAD_URL}`;
         exec(curlCmd, (error, stdout, stderr) => {
             if (error) {
                 console.warn("[UPLOAD] Curl selhal, vracím lokální URL fallback.");
-                // Fallback: Pokud upload selže, vrátíme aspoň název, ale web to asi nezobrazí
                 resolve(`/photos/${filename}`);
                 return;
             }
             try {
+                // Zkusíme parsovat JSON odpověď
                 const response = JSON.parse(stdout);
                 if (response.url) resolve(response.url);
                 else resolve(`/photos/${filename}`);
@@ -113,7 +107,6 @@ function uploadToCloud(filename) {
     });
 }
 
-// ... Tisk a Stream zůstávají stejné ...
 app.post('/print', (req, res) => {
     const { filename } = req.body;
     console.log(`[BRIDGE] Odesílám na tiskárnu: ${filename}`);
@@ -123,8 +116,9 @@ app.post('/print', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`\n📷 FotoBuddy Bridge (Cloud Upload Mode) běží na http://localhost:${PORT}`);
+    console.log(`\n📷 FotoBuddy Bridge (Cloud Mode v2) běží na http://localhost:${PORT}`);
     console.log(`ℹ️  Ukládání do: ${SAVE_DIR}`);
+    console.log(`⚡ Stream FPS: ${STREAM_FPS} (Úsporný režim)`);
     startCloudStream();
 });
 
@@ -142,13 +136,22 @@ function startCloudStream() {
             const uploadReq = https.request(CLOUD_STREAM_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'image/jpeg', 'Transfer-Encoding': 'chunked' }
-            }, (r) => { r.on('data', () => { }); scheduleNext(); });
+            }, (r) => {
+                r.on('data', () => { });
+                scheduleNext();
+            });
 
             uploadReq.on('error', () => scheduleNext());
             res.pipe(uploadReq);
         }).on('error', () => scheduleNext());
     };
-    function scheduleNext() { setTimeout(loop, 200); }
+
+    function scheduleNext() {
+        // Výpočet pauzy podle požadovaného FPS
+        const ms = Math.floor(1000 / STREAM_FPS);
+        setTimeout(loop, ms);
+    }
+
     loop();
 }
 
@@ -167,8 +170,8 @@ function waitForNewFile(dir, afterTime, timeoutMs) {
                     const filePath = path.join(dir, file);
                     try {
                         const stats = fs.statSync(filePath);
-                        if (stats.mtimeMs > (afterTime - 500)) { // Větší tolerance
-                            setTimeout(() => resolve(file), 1000); // Počkáme na zápis
+                        if (stats.mtimeMs > (afterTime - 500)) {
+                            setTimeout(() => resolve(file), 1500); // Delší čekání na dopsání souboru
                             return;
                         }
                     } catch (e) { }

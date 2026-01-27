@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Camera, Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle } from 'lucide-react';
+import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle } from 'lucide-react';
 
 const SESSION_ID = 'main';
 const DEFAULT_IP = '127.0.0.1';
@@ -16,6 +16,7 @@ export default function KioskPage() {
     // Konfigurovatelná IP adresa kamery (pro přístup z mobilu)
     const [cameraIp, setCameraIp] = useState(DEFAULT_IP);
     const [useCloudStream, setUseCloudStream] = useState(false);
+    const [streamKey, setStreamKey] = useState(0); // Pro vynucení refreshe streamu
 
     // Auto-init logic
     useEffect(() => {
@@ -28,12 +29,11 @@ export default function KioskPage() {
             const savedCloud = localStorage.getItem('use_cloud_stream');
 
             // AUTOMATIKA: Pokud běžíme na veřejné Railway doméně, MUSÍME použít Cloud Stream.
-            // Localhost tam nefunguje.
             const isRailway = window.location.hostname.includes('railway.app');
 
             if (isRailway || savedCloud === 'true') {
                 setUseCloudStream(true);
-                if (isRailway) localStorage.setItem('use_cloud_stream', 'true'); // Uložit pro příště
+                if (isRailway) localStorage.setItem('use_cloud_stream', 'true');
             }
         }
 
@@ -94,28 +94,27 @@ export default function KioskPage() {
         console.log("Taking photo sequence...");
 
         if (useCloudStream) {
-            // Provizorní řešení - zkusíme hitnout Bridge přímo (pro případ že jsme na stejné wifi)
-            // TODO: Implementovat Cloud Trigger API
             try {
+                // Provizorní řešení - v cloud režimu triggerujeme lokální Bridge,
+                // což funguje jen pokud je zařízení na stejné WiFi.
+                // Plnohodnotný "Cloud Trigger" by vyžadoval WebSocket/Polling na straně Bridge.
                 const res = await fetch(`http://${cameraIp}:5555/shoot`, { method: 'POST' });
                 const data = await res.json();
-                // Pro cloud stream nemůžeme použít lokální URL pro review, musíme počkat na upload
-                // Zatím jen fallback
+
                 if (data.success) {
-                    setLastPhoto(data.url.startsWith('http') ? data.url : `http://${cameraIp}:5555${data.url}`);
+                    setLastPhoto(data.url); // Mělo by to být URL z cloudu (/uploads/...)
                     setStatus('review');
                 }
             } catch (e) {
-                alert('Focení v Cloud režimu zatím vyžaduje být na stejné WiFi (funkce Cloud Trigger se připravuje). Spusťte focení na počítači.');
+                alert('Focení v Cloud režimu vyžaduje zapnutý Bridge. Pokud jste mimo WiFi, Cloud Trigger zatím není aktivní.');
                 setStatus('idle');
             }
         } else {
             try {
-                // Trigger Bridge (Use configured IP)
                 const res = await fetch(`http://${cameraIp}:5555/shoot`, { method: 'POST' });
                 const data = await res.json();
                 if (data.success) {
-                    setLastPhoto(`http://${cameraIp}:5555${data.url}`);
+                    setLastPhoto(data.url.startsWith('http') ? data.url : `http://${cameraIp}:5555${data.url}`);
                     setStatus('review');
                 }
             } catch (e) {
@@ -164,11 +163,16 @@ export default function KioskPage() {
                     <div className="w-full h-full relative overflow-hidden">
                         {/* Live Stream MJPEG or Cloud Stream */}
                         <img
-                            src={useCloudStream ? '/api/stream' : `http://${cameraIp}:5521/live`}
+                            src={useCloudStream ? `/api/stream?t=${streamKey}` : `http://${cameraIp}:5521/live`}
                             className="w-full h-full object-cover"
                             onError={(e) => {
-                                if (useCloudStream) return; // Necháme to na loaderu
                                 const target = e.currentTarget;
+                                if (useCloudStream) {
+                                    // Pokud stream spadne, zkusíme ho za 2s nahodit znovu
+                                    console.log("Stream dropped, reconnecting...");
+                                    setTimeout(() => setStreamKey(k => k + 1), 2000);
+                                    return;
+                                }
                                 if (target.src.includes('5521')) target.src = `http://${cameraIp}:5520/liveview.jpg`;
                                 else target.style.display = 'none';
                             }}
