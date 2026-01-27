@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle } from 'lucide-react';
+import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send } from 'lucide-react';
 
 const SESSION_ID = 'main';
 const DEFAULT_IP = '127.0.0.1';
@@ -14,6 +14,8 @@ export default function KioskPage() {
     // UI States
     const [showSettings, setShowSettings] = useState(false);
     const [showGallery, setShowGallery] = useState(false);
+    const [showEmailModal, setShowEmailModal] = useState(false);
+    const [emailInput, setEmailInput] = useState('');
     const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]);
 
     const [isHttps, setIsHttps] = useState(false);
@@ -159,9 +161,7 @@ export default function KioskPage() {
     const printPhoto = async () => {
         if (!lastPhoto) return;
         const filename = lastPhoto.split('/').pop();
-
         showToast('Odesílám na tiskárnu... 🖨️');
-
         try {
             await fetch(`http://${cameraIp}:5555/print`, {
                 method: 'POST',
@@ -169,6 +169,31 @@ export default function KioskPage() {
                 body: JSON.stringify({ filename })
             });
         } catch (e) { showToast('Chyba tisku ❌'); }
+    };
+
+    const sendEmail = async () => {
+        if (!emailInput.includes('@')) {
+            showToast('Zadej platný email!');
+            return;
+        }
+        showToast('Odesílám email... 📨'); // Okamžitá reakce
+        try {
+            const res = await fetch('/api/email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: emailInput, photoUrl: lastPhoto })
+            });
+            const data = await res.json();
+
+            if (data.simulated) showToast('✉️ Simulace: Email jakože odeslán.');
+            else if (data.success) showToast('Email odeslán! ✅');
+            else showToast('Chyba odesílání ❌');
+
+            setShowEmailModal(false);
+            setEmailInput('');
+        } catch (e) {
+            showToast('Chyba komunikace ❌');
+        }
     };
 
     // Live View Polling
@@ -229,7 +254,6 @@ export default function KioskPage() {
             {status === 'idle' && processingRef.current && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-50 pointer-events-auto"
                     onClick={() => {
-                        // Reset bez dotazů
                         processingRef.current = false;
                         showToast('Ukládání zrušeno.');
                     }}>
@@ -253,6 +277,34 @@ export default function KioskPage() {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                </div>
+            )}
+
+            {/* EMAIL MODAL */}
+            {showEmailModal && (
+                <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-8 animate-in fade-in zoom-in duration-200">
+                    <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 max-w-lg w-full shadow-2xl text-white">
+                        <div className="flex justify-between items-center mb-8">
+                            <h2 className="text-2xl font-bold">Odeslat na Email</h2>
+                            <button onClick={() => setShowEmailModal(false)} className="p-2 bg-white/10 rounded-full hover:bg-white/20"><X /></button>
+                        </div>
+                        <div className="space-y-6">
+                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
+                                <label className="block text-sm text-slate-400 mb-2">Tvůj Email</label>
+                                <input
+                                    type="email"
+                                    value={emailInput}
+                                    onChange={(e) => setEmailInput(e.target.value)}
+                                    placeholder="tvuj@email.cz"
+                                    autoFocus
+                                    className="w-full p-4 bg-slate-950 border border-slate-700 rounded-lg focus:border-indigo-500 outline-none text-white text-lg placeholder-slate-600"
+                                />
+                            </div>
+                            <button onClick={sendEmail} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-transform active:scale-95">
+                                <Send size={24} /> Odeslat fotku
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -292,7 +344,7 @@ export default function KioskPage() {
                     </div>
                     <div className="flex gap-4 px-4">
                         <button className="flex flex-col items-center gap-1 text-white opacity-80 hover:opacity-100 hover:scale-110 transition-all font-medium text-xs disabled:opacity-30" disabled={status !== 'review'} onClick={printPhoto}><Printer size={20} /> <span>Tisk</span></button>
-                        <button className="flex flex-col items-center gap-1 text-white opacity-80 hover:opacity-100 hover:scale-110 transition-all font-medium text-xs disabled:opacity-30" disabled={status !== 'review'} onClick={() => alert('Email')}><Mail size={20} /> <span>Email</span></button>
+                        <button className="flex flex-col items-center gap-1 text-white opacity-80 hover:opacity-100 hover:scale-110 transition-all font-medium text-xs disabled:opacity-30" disabled={status !== 'review'} onClick={() => setShowEmailModal(true)}><Mail size={20} /> <span>Email</span></button>
                     </div>
                 </div>
             </div>
