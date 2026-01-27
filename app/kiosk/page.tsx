@@ -24,6 +24,16 @@ export default function KioskPage() {
 
     const lastSeenTimeRef = useRef<number>(0);
 
+    // Toast Notification System
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const showToast = (msg: string) => {
+        if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+        setToastMessage(msg);
+        toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 3000);
+    };
+
     // --- INITIALIZATION & POLLING ---
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -58,14 +68,13 @@ export default function KioskPage() {
                     const photoTime = new Date(data.latest.createdAt).getTime();
                     const now = Date.now();
 
-                    // Pokud je fotka novější než poslední, co jsme viděli, a není starší než 30s
                     if ((now - photoTime) < 30000 && photoTime > lastSeenTimeRef.current) {
                         console.log("New photo detected!", data.latest);
                         lastSeenTimeRef.current = photoTime;
                         setLastPhoto(data.latest.url);
                         setStatus('review');
                         setCountdown(0);
-                        processingRef.current = false; // Konec ukládání
+                        processingRef.current = false;
                     }
                 }
             } catch (e) { }
@@ -80,10 +89,9 @@ export default function KioskPage() {
     const startCountdown = () => {
         if (processingRef.current) return;
 
-        // Zde resetujeme případné zaseklé stavy
         setCountdown(3);
         setStatus('countdown');
-        processingRef.current = true; // Zámek proti dvojímu kliku
+        processingRef.current = true;
 
         let count = 3;
         const timer = setInterval(() => {
@@ -98,18 +106,14 @@ export default function KioskPage() {
     };
 
     const takePhoto = async () => {
-        setCountdown(0); // Schovat číslo
-        // Necháme status 'countdown' nebo přepneme na 'idle' s overlayem?
-        // Necháme 'countdown' s 0, nebo 'idle' s processing flagem.
-        // Pro jednoduchost přepneme na idle, ale processingRef.current je true, takže se ukáže "Ukládání..."
+        setCountdown(0);
         setStatus('idle');
 
-        // Timeout pojistka: Pokud do 10s nepřijde fotka, resetuj to
+        // Timeout safety
         setTimeout(() => {
             if (processingRef.current) {
-                console.log("Timeout pojistka: Resetuji zaseklé ukládání.");
                 processingRef.current = false;
-                alerting("Trvalo to moc dlouho. Zkuste to znovu.");
+                showToast("Trvalo to moc dlouho. Zkuste to znovu.");
             }
         }, 15000);
 
@@ -121,7 +125,7 @@ export default function KioskPage() {
                     body: JSON.stringify({ cmd: 'SHOOT' })
                 });
             } catch (e) {
-                alerting('Chyba cloud triggeru.');
+                showToast('Chyba cloud triggeru.');
                 processingRef.current = false;
             }
         } else {
@@ -129,13 +133,12 @@ export default function KioskPage() {
                 const res = await fetch(`http://${cameraIp}:5555/shoot`, { method: 'POST' });
                 const data = await res.json();
                 if (data.success) {
-                    // V lokálním režimu fotka přijde rovnou v odpovědi
                     setLastPhoto(data.url.startsWith('http') ? data.url : `http://${cameraIp}:5555${data.url}`);
                     setStatus('review');
                 }
                 processingRef.current = false;
             } catch (e) {
-                alerting('Chyba spojení s kamerou.');
+                showToast('Chyba spojení s kamerou.');
                 processingRef.current = false;
             }
         }
@@ -154,17 +157,17 @@ export default function KioskPage() {
     const printPhoto = async () => {
         if (!lastPhoto) return;
         const filename = lastPhoto.split('/').pop();
+
+        showToast('Odesílám na tiskárnu... 🖨️');
+
         try {
             await fetch(`http://${cameraIp}:5555/print`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filename })
             });
-            alert('Odesláno na tiskárnu! 🖨️');
-        } catch (e) { alert('Chyba tisku.'); }
+        } catch (e) { showToast('Chyba tisku ❌'); }
     };
-
-    const alerting = (msg: string) => { if (typeof window !== 'undefined') alert(msg); };
 
     // Live View Polling
     const [liveTick, setLiveTick] = useState(Date.now());
@@ -172,6 +175,15 @@ export default function KioskPage() {
     // --- RENDER ---
     return (
         <div className="relative w-full h-full bg-gray-100 overflow-hidden flex flex-col items-center justify-center">
+
+            {/* TOAST NOTIFICATION */}
+            {toastMessage && (
+                <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[60] animate-in fade-in slide-in-from-top-4 duration-300 pointer-events-none">
+                    <div className="bg-black/80 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-white/10">
+                        <span className="font-medium text-sm">{toastMessage}</span>
+                    </div>
+                </div>
+            )}
 
             {/* Warning Overlay */}
             {isHttps && !useCloudStream && cameraIp === '127.0.0.1' && status === 'idle' && (
@@ -215,14 +227,13 @@ export default function KioskPage() {
             {status === 'idle' && processingRef.current && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-50 pointer-events-auto"
                     onClick={() => {
-                        // Nouzový reset kliknutím na overlay
                         if (confirm('Zrušit ukládání?')) processingRef.current = false;
                     }}>
                     <div className="text-white font-bold text-xl animate-pulse">Ukládání...</div>
                 </div>
             )}
 
-            {/* GALLERY & SETTINGS (stejné jako předtím) */}
+            {/* GALLERY */}
             {showGallery && (
                 <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-xl flex flex-col p-8 animate-in fade-in duration-300">
                     <div className="flex justify-between items-center mb-8">
