@@ -1,99 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
-  --background: #ffffff;
-  --foreground: #1e293b;
-  --primary: #2563eb;
-  --accent: #f8fafc;
-  --glass: rgba(255, 255, 255, 0.85);
-  --glass-border: rgba(255, 255, 255, 0.5);
-  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 10, 10, 20;
+  --background-end-rgb: 20, 20, 40;
 }
 
-html,
 body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(to bottom, transparent, rgb(var(--background-end-rgb))) rgb(var(--background-start-rgb));
+  min-height: 100vh;
+  /* Ensure font is loaded via Next/Font */
+  font-family: 'Inter', sans-serif;
+  overflow-x: hidden;
   margin: 0;
   padding: 0;
-  height: 100%;
-  overflow: hidden;
-  /* Prevent scrolling for Kiosk feel */
 }
 
-body {
-  background-color: #f1f5f9;
-  color: var(--foreground);
-  font-family: 'Outfit', sans-serif;
-  /* Ensure font is loaded in layout */
-  -webkit-font-smoothing: antialiased;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-button {
-  cursor: pointer;
-  border: none;
-  font-family: inherit;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-button:active {
-  transform: scale(0.95);
-}
-
-/* Modern Glass Bar */
-.dock-container {
-  background: var(--glass);
+/* Glassmorphism Utility */
+.glass {
+  background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--glass-border);
-  border-radius: 24px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-  padding: 1rem 2rem;
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
 }
 
-.icon-btn {
-  background: transparent;
-  padding: 12px;
-  border-radius: 16px;
-  color: #64748b;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.75rem;
-  font-weight: 500;
+.glass-hover:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
-.icon-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: #0f172a;
+/* Text Gradient */
+.text-gradient {
+  background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
-.shutter-btn {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: #fff;
-  border: 4px solid rgba(0, 0, 0, 0.1);
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.5), 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--primary);
-  margin: 0 1rem;
+/* Animations */
+@keyframes float {
+  0% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+
+  100% {
+    transform: translateY(0px);
+  }
 }
 
-.shutter-btn:hover {
-  transform: scale(1.05);
-  border-color: var(--primary);
-}
-
-.shutter-inner {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: var(--primary);
+.animate-float {
+  animation: float 6s ease-in-out infinite;
 }

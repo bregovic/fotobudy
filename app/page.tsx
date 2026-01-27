@@ -1,36 +1,82 @@
 import Link from 'next/link';
+import { Camera, Image as ImageIcon, User, Sparkles } from 'lucide-react';
 
 export default function Home() {
   return (
-    <main className="container" style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      textAlign: 'center'
-    }}>
-      <h1 className="title-gradient" style={{ fontSize: '4rem', marginBottom: '1rem' }}>
-        FotoBuddy
-      </h1>
-      <p style={{ fontSize: '1.25rem', color: '#94a3b8', marginBottom: '3rem', maxWidth: '600px' }}>
-        Next-gen fotobudka s ovládáním přes mobil. Připojte zrcadlovku, tiskárnu a bavte se!
-      </p>
+    <main className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
 
-      <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-        <Link href="/kiosk" className="btn-primary" style={{ padding: '1rem 2rem', fontSize: '1.1rem', textDecoration: 'none' }}>
-          Spustit Kiosk (Host)
-        </Link>
-        <Link href="/remote" className="glass-panel" style={{ padding: '1rem 2rem', color: 'white', textDecoration: 'none', fontWeight: 600 }}>
-          Připojit se (Remote)
-        </Link>
-      </div>
+      {/* Background Ambience */}
+      <div className="absolute top-0 left-0 w-full h-full -z-10 bg-[radial-gradient(circle_at_50%_50%,_#1f1f3a_0%,_#000_100%)]" />
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-[100px] animate-float" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-[100px] animate-float" style={{ animationDelay: '2s' }} />
 
-      <div style={{ marginTop: '4rem', padding: '1.5rem', borderTop: '1px solid var(--glass-border)' }}>
-        <p style={{ fontSize: '0.9rem', color: '#64748b' }}>
-          Postaveno pro Canon DSLR & Railway
+      {/* Header */}
+      <div className="text-center mb-12 relative z-10">
+        <h1 className="text-5xl md:text-7xl font-black mb-4 tracking-tight">
+          <span className="text-gradient">FotoBuddy</span>
+        </h1>
+        <p className="text-slate-400 text-lg md:text-xl font-light tracking-wide">
+          Zachyťte okamžik. Navždy.
         </p>
       </div>
+
+      {/* Navigation Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl relative z-10 px-4">
+
+        {/* Card 1: Focení */}
+        <Link href="/kiosk" className="group">
+          <div className="glass glass-hover h-64 rounded-3xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="bg-slate-800/50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300 shadow-xl border border-white/10">
+              <Camera size={40} className="text-blue-400" />
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Focení</h2>
+            <p className="text-sm text-slate-400">Vstoupit do fotokoutku</p>
+          </div>
+        </Link>
+
+        {/* Card 2: Video Vzkazy */}
+        <Link href="/video" className="group">
+          <div className="glass glass-hover h-64 rounded-3xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="bg-slate-800/50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300 shadow-xl border border-white/10">
+              <span className="text-red-400 text-4xl">🎥</span>
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Video Vzkazy</h2>
+            <p className="text-sm text-slate-400">Nahrát přání (15s)</p>
+          </div>
+        </Link>
+
+        {/* Card 3: Galerie */}
+        <Link href="#" className="group">
+          <div className="glass glass-hover h-64 rounded-3xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 relative overflow-hidden">
+            <div className="bg-slate-800/50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300 shadow-xl border border-white/10">
+              <ImageIcon size={40} className="text-purple-400" />
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Galerie</h2>
+            <p className="text-sm text-slate-400">Prohlížet fotografie</p>
+          </div>
+        </Link>
+
+        {/* Card 4: Profil */}
+        <Link href="#" className="group">
+          <div className="glass glass-hover h-64 rounded-3xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 relative overflow-hidden">
+            <div className="bg-slate-800/50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300 shadow-xl border border-white/10">
+              <User size={40} className="text-emerald-400" />
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Profil</h2>
+            <p className="text-sm text-slate-400">Přihlášení a správa</p>
+          </div>
+        </Link>
+
+      </div>
+
+      {/* Footer */}
+      <div className="absolute bottom-8 text-slate-500 text-xs flex items-center gap-2 opacity-50">
+        <Sparkles size={12} />
+        <span>Powered by Antigravity AI</span>
+      </div>
+
     </main>
   );
 }

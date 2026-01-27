@@ -4,6 +4,7 @@ const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const http = require('http'); // Pro HTTP requesty
+const https = require('https'); // Pro HTTPS requesty na cloud
 
 const app = express();
 const PORT = 5555;
@@ -16,6 +17,11 @@ app.use(express.json());
 // Port 5520 podle tvého nastavení
 const DCC_API_URL = 'http://127.0.0.1:5520/?CMD=Capture';
 const SAVE_DIR = path.join(process.cwd(), 'public', 'photos');
+
+// --- CLOUD STREAMING KONFIGURACE ---
+// Adresa tvého veřejného serveru na Railway
+const CLOUD_API_URL = 'https://fotobuddy.up.railway.app/api/stream';
+let isStreaming = false;
 
 // Zámek
 let isCapturing = false;
@@ -83,68 +89,66 @@ app.post('/print', (req, res) => {
     res.json({ success: true, message: 'Odesláno na tisk' });
 });
 
-// --- CLOUD STREAMING KONFIGURACE ---
-// Adresa tvého veřejného serveru na Railway
-const CLOUD_API_URL = 'https://fotobuddy.up.railway.app/api/stream';
-let isStreaming = false;
-
-// ... (zbytek kódu zůstává) ...
-
 app.listen(PORT, () => {
     console.log(`\n📷 FotoBuddy Bridge (HTTP Trigger Mode) běží na http://localhost:${PORT}`);
     console.log(`ℹ️  Ujistěte se, že DigiCamControl ukládá fotky do:\n   ${SAVE_DIR}`);
 
-    // Automaticky spustit streamování do cloudu
+    // Automaticky spustit streamování do cloudu na pozadí
     startCloudStream();
 });
 
-async function startCloudStream() {
+// Funkce pro cloud stream bez fetch (pouze nativní http/https)
+function startCloudStream() {
     if (isStreaming) return;
     isStreaming = true;
     console.log(`[STREAM] Začínám vysílat na: ${CLOUD_API_URL}`);
 
-    // Smyčka pro odesílání snímků
-    const loop = async () => {
-        try {
-            // 1. Stáhnout snímek z lokální kamery
-            // Použijeme stream 5520/liveview.jpg (statický snímek je pro upload lepší než MJPEG stream)
-            const localUrl = 'http://127.0.0.1:5520/liveview.jpg';
-
-            // Poznámka: Musíme použít http.get a pak to poslat dál
-            // Pro jednoduchost a rychlost použijeme fetch (v Node 18+ je nativní, ale v 16 ne).
-            // Zkusíme jednoduchý fetch, pokud selže, dáme fallback.
-
-            const frameRes = await fetch(localUrl);
-            if (!frameRes.ok) throw new Error('Kamera nedostupná');
-
-            const blob = await frameRes.blob();
-
-            // 2. Odeslat na cloud
-            // Pošleme to jako binární body
-            // Ignorujeme chyby SSL certifikátu pro localhost, ale pro cloud je to OK
-            const uploadRes = await fetch(CLOUD_API_URL, {
-                method: 'POST',
-                body: blob,
-                headers: { 'Content-Type': 'image/jpeg' }
-            });
-
-            if (!uploadRes.ok) {
-                // console.warn('[STREAM] Upload failed:', uploadRes.status);
+    const loop = () => {
+        // 1. Stáhnout snímek z lokální kamery (MJPEG snapshot)
+        http.get('http://127.0.0.1:5520/liveview.jpg', (res) => {
+            if (res.statusCode !== 200) {
+                // Kamera asi nejede nebo server je dole
+                res.resume(); // Zahodit data (nutné pro uvolnění socketu)
+                return scheduleNext();
             }
 
-        } catch (e) {
-            // Chyby vypisujeme jen občas, ať nespamujeme konzoli
-            if (Math.random() > 0.95) console.warn('[STREAM] Chyba smyčky (kamera vypnutá?):', e.message);
-        }
+            // 2. Odeslat na cloud (HTTPS POST)
+            const uploadReq = https.request(CLOUD_API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'image/jpeg',
+                    'Transfer-Encoding': 'chunked' // Streaming upload
+                }
+            }, (cloudRes) => {
+                // Hotovo, odpověď nás nezajímá, jen ji zkonzumujeme
+                cloudRes.on('data', () => { });
 
-        // Čekáme chviličku (např. 100ms = 10 FPS), abychom nezahltili síť
-        setTimeout(loop, 200);
+                // Hned jak se uploadne, plánujeme další
+                scheduleNext();
+            });
+
+            uploadReq.on('error', (e) => {
+                // console.warn('[STREAM] Upload error:', e.message);
+                scheduleNext();
+            });
+
+            // "Trubka" z kamery rovnou do cloudu
+            res.pipe(uploadReq);
+
+        }).on('error', (e) => {
+            // Chyba stahování z kamery (asi neběží DigiCamControl)
+            // console.warn('[STREAM] Download error:', e.message);
+            scheduleNext();
+        });
     };
+
+    function scheduleNext() {
+        // 200ms = 5 FPS, stačí pro náhled a šetří data
+        setTimeout(loop, 200);
+    }
 
     loop();
 }
-
-// ... (zbytek) ...
 
 // Funkce pro čekání na nový soubor
 function waitForNewFile(dir, afterTime, timeoutMs) {
