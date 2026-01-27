@@ -1,36 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
+import { prisma } from '@/lib/prisma';
 
-// Tento endpoint slouží pro dynamické čtení nahraných souborů.
-// V Next.js 15+ jsou params Promise.
-export async function GET(
-    req: NextRequest,
-    { params }: { params: Promise<{ filename: string }> } // Správný typ pro Next.js 15+
-) {
-    const { filename } = await params;
+export async function GET(req: NextRequest, { params }: { params: { filename: string } }) {
+    const filename = params.filename;
 
-    // Cesta k "runtime" uploadům (musí sedět s upload/route.ts)
-    const safeName = path.basename(filename);
-    const filePath = path.join(process.cwd(), 'public', 'uploads', safeName);
+    // Hledáme v DB podle URL (protože url v DB je /api/view/filename)
+    // Nebo můžeme hledat jen podle koncovky url...
+    // Zkusíme najít záznam, který končí na toto jméno
 
-    if (!fs.existsSync(filePath)) {
-        return new NextResponse("File not found", { status: 404 });
-    }
+    try {
+        const media = await prisma.media.findFirst({
+            where: {
+                url: { endsWith: filename }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
 
-    const fileBuffer = fs.readFileSync(filePath);
-
-    // Detekce typu
-    const ext = path.extname(safeName).toLowerCase();
-    let contentType = 'application/octet-stream';
-    if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
-    if (ext === '.png') contentType = 'image/png';
-    if (ext === '.mp4') contentType = 'video/mp4';
-
-    return new NextResponse(fileBuffer, {
-        headers: {
-            'Content-Type': contentType,
-            'Cache-Control': 'public, max-age=31536000, immutable'
+        if (!media || !media.data) {
+            return new NextResponse('Not found', { status: 404 });
         }
-    });
+
+        return new NextResponse(media.data, {
+            headers: {
+                'Content-Type': 'image/jpeg',
+                'Cache-Control': 'public, max-age=31536000, immutable'
+            }
+        });
+    } catch (e) {
+        return new NextResponse('Error', { status: 500 });
+    }
 }

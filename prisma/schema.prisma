@@ -10,25 +10,28 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Media {
-  id        String   @id @default(cuid())
-  type      String   // "PHOTO" | "VIDEO"
-  url       String   // Cesta k souboru nebo URL
-  thumbnail String?  // Náhled (pro videa)
-  
+model Session {
+  id        String   @id
   createdAt DateTime @default(now())
-  
-  // Bezpečnost a soukromí
-  isPrivate Boolean  @default(false)
-  email     String?  // Email majitele (pro soukromý přístup)
-  
-  // Metadata
-  width     Int?
-  height    Int?
-  size      Int?     // Velikost v bajtech
+  updatedAt DateTime @updatedAt
+  status    String   @default("idle")
 }
 
-model Setting {
-  key       String   @id
-  value     String
+model Media {
+  id        String   @id @default(cuid())
+  url       String
+  type      String   // "PHOTO", "VIDEO"
+  createdAt DateTime @default(now())
+  
+  // NOVÉ: Ukládáme fotku (web verzi) přímo do DB
+  data      Bytes?
+  localPath String?
+}
+
+model Command {
+  id        String   @id @default(cuid())
+  command   String
+  params    String?
+  createdAt DateTime @default(now())
+  processed Boolean  @default(false)
 }

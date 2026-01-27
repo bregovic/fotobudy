@@ -1,65 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import fs from 'fs';
-import path from 'path';
-
-export const dynamic = 'force-dynamic';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 export async function POST(req: NextRequest) {
     try {
         const formData = await req.formData();
         const file = formData.get('file') as File;
-        let type = formData.get('type') as string;
-
-        if (!type) {
-            const ext = file.name.split('.').pop()?.toLowerCase();
-            if (ext === 'jpg' || ext === 'png' || ext === 'jpeg') type = 'PHOTO';
-            else if (ext === 'mp4' || ext === 'webm') type = 'VIDEO';
-            else type = 'PHOTO'; // Fallback
-        }
+        const type = (formData.get('type') as String) || 'PHOTO';
+        const localPath = formData.get('localPath') as string || ''; // Cesta z Bridge
 
         if (!file) {
-            return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+            return NextResponse.json({ error: 'No file provided' }, { status: 400 });
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
-        const timestamp = Date.now();
-        // Remove spaces and weird chars from filename
-        const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '');
-        const filename = `${type.toLowerCase()}_${timestamp}_${safeName}`;
+        const filename = file.name;
 
-        // Zajistit, že složka existuje
-        const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
-
-        const filePath = path.join(uploadDir, filename);
-        fs.writeFileSync(filePath, buffer);
-
-        // Uložit do DB a vrátit URL na náš View Endpoint
+        // Vytvoříme virtuální URL (už nebude existovat na disku, ale View si ji najde)
         const publicUrl = `/api/view/${filename}`;
 
-        let media;
-        try {
-            media = await prisma.media.create({
-                data: {
-                    type: type,
-                    url: publicUrl,
-                    isPrivate: false
-                }
-            });
-        } catch (dbError) {
-            console.warn("DB Save failed (running without DB?):", dbError);
-            media = { url: publicUrl, type };
-        }
+        // ULOŽENÍ DO DB ("Database as Storage")
+        const media = await prisma.media.create({
+            data: {
+                url: publicUrl,
+                type: type as string,
+                data: buffer,         // TADY ukládáme samotný obrázek
+                localPath: localPath  // A tady cestu u tebe na PC
+            }
+        });
 
-        return NextResponse.json({ success: true, url: media.url, media });
+        console.log(`[UPLOAD] Saved to DB: ${filename} (${buffer.length} bytes)`);
+
+        return NextResponse.json({
+            success: true,
+            url: publicUrl,
+            id: media.id
+        });
 
     } catch (e: any) {
-        console.error("Upload error:", e);
+        console.error('Upload error:', e);
         return NextResponse.json({ error: e.message }, { status: 500 });
     }
 }

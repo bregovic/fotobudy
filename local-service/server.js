@@ -97,13 +97,16 @@ $img.Dispose(); $newImg.Dispose(); $graph.Dispose();
 
 function uploadToCloud(filePath, originalFilename) {
     return new Promise((resolve, reject) => {
-        const curlCmd = `curl -X POST -F "type=PHOTO" -F "file=@${filePath};filename=${originalFilename}" ${CLOUD_UPLOAD_URL}`;
+        const fullLocalPath = path.join(SAVE_DIR, originalFilename);
+        // Přidali jsme -F "localPath=..."
+        const curlCmd = `curl -X POST -F "type=PHOTO" -F "file=@${filePath};filename=${originalFilename}" -F "localPath=${fullLocalPath}" ${CLOUD_UPLOAD_URL}`;
+
         exec(curlCmd, (error, stdout) => {
-            if (error) { resolve(`/photos/${originalFilename}`); return; }
+            if (error) { resolve(`/api/view/${originalFilename}`); return; }
             try {
                 const response = JSON.parse(stdout);
-                if (response.url) resolve(response.url); else resolve(`/photos/${originalFilename}`);
-            } catch (e) { resolve(`/photos/${originalFilename}`); }
+                if (response.url) resolve(response.url); else resolve(`/api/view/${originalFilename}`);
+            } catch (e) { resolve(`/api/view/${originalFilename}`); }
         });
     });
 }
