@@ -1,26 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../../../../lib/prisma';
 
 export async function POST(req: NextRequest) {
     try {
-        const body = await req.json();
-        const { filename, type = 'PHOTO' } = body;
-
-        if (!filename) {
-            return NextResponse.json({ error: 'Filename required' }, { status: 400 });
-        }
+        const { filename, type } = await req.json();
 
         const media = await prisma.media.create({
             data: {
                 type: type,
-                url: `/photos/${filename}`, // Bridge ukládá do /photos
-                isPrivate: false
+                url: `/photos/${filename}` // Bridge ukládá do /photos
             }
         });
 
-        return NextResponse.json({ success: true, media });
+        return NextResponse.json({ success: true, id: media.id });
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });
     }
