@@ -45,7 +45,7 @@ export default function Home() {
               <span className="text-red-400 text-4xl">🎥</span>
             </div>
             <h2 className="text-2xl font-bold mb-2">Video Vzkazy</h2>
-            <p className="text-sm text-slate-400">Nahrát přání (15s)</p>
+            <p className="text-sm text-slate-400">Nahrát vzkaz (15s)</p>
           </div>
         </Link>
 

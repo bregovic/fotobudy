@@ -170,7 +170,7 @@ export default function VideoBooth() {
                 )}
             </div>
 
-            <h2 className="mt-8 text-slate-500 font-light uppercase tracking-widest text-sm">Videovzkaz pro novomanžele</h2>
+            <h2 className="mt-8 text-slate-500 font-light uppercase tracking-widest text-sm">Zanechte nám videovzkaz</h2>
         </div>
     );
 }
