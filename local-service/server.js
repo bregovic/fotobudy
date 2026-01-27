@@ -120,7 +120,91 @@ app.listen(PORT, () => {
     console.log(`ℹ️  Ukládání do: ${SAVE_DIR}`);
     console.log(`⚡ Stream FPS: ${STREAM_FPS} (Úsporný režim)`);
     startCloudStream();
+    startCommandPolling(); // Spustit naslouchání příkazům z cloudu
 });
+
+// Naslouchání příkazům z Cloudu (Cloud Trigger)
+// Umožňuje fotit z mobilu bez přímého spojení s PC
+function startCommandPolling() {
+    console.log('[CMD] Začínám naslouchat příkazům z cloudu...');
+
+    const poll = () => {
+        // Ptáme se serveru: "Mám úkol?"
+        https.get(`${CLOUD_API_URL}/api/command`, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try {
+                    if (res.statusCode === 200) {
+                        const json = JSON.parse(data);
+                        if (json.command === 'SHOOT' && !isCapturing) {
+                            console.log('[CMD] PŘIJAT PŘÍKAZ SHOOT Z CLOUDU! 🔫');
+                            triggerLocalShoot();
+                        }
+                    }
+                } catch (e) {
+                    // Ignorujeme chyby parsování
+                }
+                setTimeout(poll, 500); // Ptáme se 2x za sekundu
+            });
+        }).on('error', (e) => {
+            // Chyba sítě - zkusíme to zase za chvíli
+            setTimeout(poll, 2000);
+        });
+    };
+    poll();
+}
+
+// Funkce pro lokální odpálení (stejná logika jako endpoint /shoot)
+async function triggerLocalShoot() {
+    if (isCapturing) return;
+    isCapturing = true;
+    console.log('[BRIDGE] Provádím Cloud Trigger Capture...');
+    const startTime = Date.now();
+
+    try {
+        await new Promise((resolve, reject) => {
+            const request = http.get(DCC_API_URL, (res) => {
+                // Jen odpálíme, výsledek nás tolik nezajímá, hlavní je soubor
+                res.resume();
+                resolve();
+            });
+            request.on('error', reject);
+        });
+
+        // Čekáme na soubor a uploadujeme ho
+        // (Bridge už má logiku, že uploaduje vše, co najde? 
+        //  Ne, musíme to zavolat explicitně nebo spoléhat na file watcher.)
+        //  V /shoot endpointu to máme explicitní. Zkopírujeme tu logiku sem,
+        //  nebo - ještě lépe - zavoláme sami sebe HTTP requestem, abychom nekopírovali kód.
+
+        // VOLÁNÍ SEBE SAMA (localhost:5555/shoot)
+        // Tím využijeme veškerou stávající logiku endpointu
+        // isCapturing musíme na chvíli uvolnit, protože /shoot si ho nastaví znovu
+        isCapturing = false;
+
+        const postData = JSON.stringify({});
+        const req = http.request({
+            hostname: 'localhost',
+            port: PORT,
+            path: '/shoot',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': postData.length
+            }
+        }, (res) => {
+            // /shoot zpracuje focení, upload i odpověď (kterou tady ignorujeme)
+            console.log('[CMD] Lokální /shoot endpoint aktivován.');
+        });
+        req.write(postData);
+        req.end();
+
+    } catch (e) {
+        console.error('[CMD] Chyba při spouštění spouště:', e.message);
+        isCapturing = false;
+    }
+}
 
 function startCloudStream() {
     if (isStreaming) return;

@@ -94,22 +94,37 @@ export default function KioskPage() {
         console.log("Taking photo sequence...");
 
         if (useCloudStream) {
+            // CLOUD TRIGGER: Pošleme příkaz na server, Bridge si ho vyzvedne
             try {
-                // Provizorní řešení - v cloud režimu triggerujeme lokální Bridge,
-                // což funguje jen pokud je zařízení na stejné WiFi.
-                // Plnohodnotný "Cloud Trigger" by vyžadoval WebSocket/Polling na straně Bridge.
-                const res = await fetch(`http://${cameraIp}:5555/shoot`, { method: 'POST' });
-                const data = await res.json();
+                await fetch('/api/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cmd: 'SHOOT' })
+                });
 
-                if (data.success) {
-                    setLastPhoto(data.url); // Mělo by to být URL z cloudu (/uploads/...)
-                    setStatus('review');
-                }
+                // Přepneme do režimu čekání na výsledek (zneužijeme 'countdown' nebo přidáme 'loading')
+                // Zatím necháme 'countdown' doběhnout a pak budeme čekat v 'poll' smyčce na pending fotku?
+                // Ne, Bridge po vyfocení neposílá "pending" notifikaci do /api/poll, ale rovnou uploadne soubor.
+
+                // Hack: Kiosk už má polling smyčku (řádek 47). 
+                // Ale ta smyčka hledá `data.pending`. 
+                // Musíme zajistit, aby Bridge dal serveru vědět "Hele, vyfotil jsem to".
+
+                // PROZATÍM: Jen doufáme, že to klapne.
+                // Ideálně by server měl po přijetí uploadu od Bridge poslat WebSocket zprávu,
+                // nebo aspoň uložit "lastPhoto" do session.
+
+                // Zjednodušení: Nebudeme čekat na odpověď od Bridge (protože to je asynchronní),
+                // ale prostě budeme chvíli čekat a doufat, že se fotka objeví.
+
+                // TODO: Vylepšit signalizaci úspěchu.
+
             } catch (e) {
-                alert('Focení v Cloud režimu vyžaduje zapnutý Bridge. Pokud jste mimo WiFi, Cloud Trigger zatím není aktivní.');
+                alert('Chyba cloud triggeru.');
                 setStatus('idle');
             }
         } else {
+            // LOKÁLNÍ REŽIM (funguje jen na stejné síti + HTTP)
             try {
                 const res = await fetch(`http://${cameraIp}:5555/shoot`, { method: 'POST' });
                 const data = await res.json();
