@@ -6,12 +6,12 @@ export async function GET(req: NextRequest, { params }: { params: { filename: st
     const filename = params.filename;
 
     try {
-        const media = await prisma.media.findFirst({
+        const media = (await prisma.media.findFirst({
             where: {
                 url: { endsWith: filename }
             },
             orderBy: { createdAt: 'desc' }
-        });
+        })) as any;
 
         if (!media || !media.data) {
             return new NextResponse('Not found', { status: 404 });

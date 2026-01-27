@@ -177,7 +177,7 @@ export default function KioskPage() {
 
                             // Tady je to kouzlo: Další snímek si vyžádáme až když tenhle dorazí
                             onLoad={() => {
-                                if (useCloudStream) setTimeout(() => setLiveTick(Date.now()), 50);
+                                if (useCloudStream) setTimeout(() => setLiveTick(Date.now()), 10);
                             }}
                             onError={(e) => {
                                 const target = e.currentTarget;

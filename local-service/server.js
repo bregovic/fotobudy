@@ -20,8 +20,8 @@ const CLOUD_API_URL = 'https://cvak.up.railway.app';
 const SNAPSHOT_API_URL = `${CLOUD_API_URL}/api/stream/snapshot`;
 const CLOUD_UPLOAD_URL = `${CLOUD_API_URL}/api/media/upload`;
 
-// FPS pro Snapshoty
-const SNAPSHOT_FPS = 4;
+// FPS pro Snapshoty (ZRYCHLENÍ: 4 -> 10)
+const SNAPSHOT_FPS = 10;
 
 let isCapturing = false;
 
