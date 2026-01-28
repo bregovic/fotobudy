@@ -1,73 +1,89 @@
-const { spawn, exec } = require('child_process');
+const { spawn, exec, fork } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
 
-// KONFIGURACE CEST
+// KONFIGURACE
 const DIGICAM_PATH = 'C:\\Program Files (x86)\\digiCamControl\\CameraControl.exe';
 const CHROME_PATH_1 = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const CHROME_PATH_2 = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
-
-// LOKÁLNÍ URL
 const LOCAL_PORT = 3000;
-const BRIDGE_PORT = 5555;
 const KIOSK_URL = `http://localhost:${LOCAL_PORT}/kiosk`;
 
 console.log('');
 console.log('╔══════════════════════════════════════════════════════════╗');
-console.log('║       🎯 BLICK & CVAK - LOKÁLNÍ APLIKACE                 ║');
+console.log('║       🎯 BLICK & CVAK - UNIFIED LAUNCHER                 ║');
 console.log('╚══════════════════════════════════════════════════════════╝');
 console.log('');
 
-// 1. Spustit DigicamControl (Kamera)
-console.log('📷 [1/5] Startuji DigicamControl...');
+// 1. Spustit DigicamControl (jediné oddělené okno)
+console.log('📷 [1/4] Startuji DigicamControl...');
 if (fs.existsSync(DIGICAM_PATH)) {
-    spawn(DIGICAM_PATH, [], { detached: true, stdio: 'ignore' }).unref();
+    spawn(DIGICAM_PATH, [], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false  // DCC potřebuje své okno
+    }).unref();
     console.log('      ✅ DigicamControl spuštěn');
 } else {
     console.log('      ℹ️  DigicamControl nenalezen (možná již běží)');
 }
 
-// 2. Spustit Bridge Server (Live Stream + Cloud Sync)
-console.log('🌉 [2/5] Startuji Bridge server (port ' + BRIDGE_PORT + ')...');
+// 2. Spustit Bridge Server (SKRYTĚ - v tomto procesu)
+console.log('🌉 [2/4] Startuji Bridge server...');
 const bridgePath = path.join(process.cwd(), 'local-service', 'server.js');
 if (fs.existsSync(bridgePath)) {
-    const bridge = spawn('node', [bridgePath], {
-        stdio: 'ignore',
-        detached: true,
-        cwd: process.cwd()
+    // Fork místo spawn - sdílí stdout s tímto procesem
+    const bridge = fork(bridgePath, [], {
+        cwd: process.cwd(),
+        silent: false  // Bude vypisovat do naší konzole
     });
-    bridge.unref();
-    console.log('      ✅ Bridge server spuštěn (live stream + cloud sync)');
+
+    bridge.on('error', (err) => {
+        console.error('      ⚠️  Bridge error:', err.message);
+    });
+
+    console.log('      ✅ Bridge server běží na portu 5555');
 } else {
-    console.log('      ⚠️  Bridge server nenalezen: ' + bridgePath);
+    console.log('      ⚠️  Bridge nenalezen');
 }
 
-// 3. Spustit File Watcher (Hlídač nových fotek)
-console.log('👀 [3/5] Startuji hlídače nových fotek...');
+// 3. Spustit File Watcher (SKRYTĚ - v tomto procesu)
+console.log('👀 [3/4] Startuji hlídače fotek...');
 const watcherPath = path.join(process.cwd(), 'scripts', 'watch_folder.js');
 if (fs.existsSync(watcherPath)) {
-    const watcher = spawn('node', [watcherPath], {
-        stdio: 'ignore',
-        detached: true,
-        cwd: process.cwd()
+    const watcher = fork(watcherPath, [], {
+        cwd: process.cwd(),
+        silent: true  // Nepotřebujeme jeho logy
     });
-    watcher.unref();
-    console.log('      ✅ File watcher spuštěn');
+
+    watcher.on('error', (err) => {
+        console.error('      ⚠️  Watcher error:', err.message);
+    });
+
+    console.log('      ✅ File watcher běží');
 } else {
     console.log('      ⚠️  File watcher nenalezen');
 }
 
-// 4. Spustit Lokální Server (Next.js)
-console.log('🧠 [4/5] Startuji Next.js server (port ' + LOCAL_PORT + ')...');
-const server = spawn('cmd.exe', ['/c', 'npx next dev -p ' + LOCAL_PORT], {
-    stdio: 'inherit',
-    cwd: process.cwd()
+// 4. Spustit Next.js Server (v tomto okně - hlavní proces)
+console.log('🧠 [4/4] Startuji Next.js server (port ' + LOCAL_PORT + ')...');
+console.log('');
+console.log('─────────────────────────────────────────────────────────────');
+console.log('');
+
+const server = spawn('npx', ['next', 'dev', '-p', LOCAL_PORT.toString()], {
+    stdio: 'inherit',  // Sdílí konzoli s tímto procesem
+    cwd: process.cwd(),
+    shell: true,
+    windowsHide: true
 });
 
-// 5. Počkat až server naběhne a pak spustit Kiosk
-console.log('⏳ [5/5] Čekám na nastartování serveru...');
+server.on('error', (err) => {
+    console.error('❌ Server error:', err.message);
+});
 
+// Čekání na server a spuštění Chrome
 let serverReady = false;
 function checkServer() {
     if (serverReady) return;
@@ -76,7 +92,9 @@ function checkServer() {
         if (res.statusCode === 200 && !serverReady) {
             serverReady = true;
             console.log('');
-            console.log('✅ Server běží! Otevírám Kiosk...');
+            console.log('─────────────────────────────────────────────────────────────');
+            console.log('');
+            console.log('✅ VŠE BĚŽÍ!');
             openChromeApp();
         } else if (!serverReady) {
             setTimeout(checkServer, 1000);
@@ -87,41 +105,49 @@ function checkServer() {
 }
 setTimeout(checkServer, 3000);
 
-
 function openChromeApp() {
     const chromePath = fs.existsSync(CHROME_PATH_1) ? CHROME_PATH_1 :
         (fs.existsSync(CHROME_PATH_2) ? CHROME_PATH_2 : null);
 
     if (chromePath) {
         console.log('🚀 Spouštím Chrome Kiosk...');
-        const args = [
+
+        spawn(chromePath, [
             `--app=${KIOSK_URL}`,
             '--start-maximized',
             '--kiosk',
             '--autoplay-policy=no-user-gesture-required',
             '--disable-infobars',
             '--user-data-dir=C:\\Temp\\BlickCvakKiosk'
-        ];
-
-        spawn(chromePath, args, { detached: true, stdio: 'ignore' }).unref();
+        ], {
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true
+        }).unref();
 
         console.log('');
         console.log('╔══════════════════════════════════════════════════════════╗');
-        console.log('║   🎉 APLIKACE BĚŽÍ!                                      ║');
+        console.log('║   🎉 BLICK & CVAK BĚŽÍ                                   ║');
         console.log('║                                                          ║');
         console.log('║   📍 Kiosk:  http://localhost:' + LOCAL_PORT + '/kiosk                 ║');
-        console.log('║   📍 Bridge: http://localhost:' + BRIDGE_PORT + '/stream.mjpg           ║');
+        console.log('║   📍 Bridge: http://localhost:5555                       ║');
         console.log('║                                                          ║');
-        console.log('║   💡 Pro ukončení zavřete toto okno.                     ║');
+        console.log('║   💡 Toto okno nechte otevřené.                          ║');
+        console.log('║   💡 Pro ukončení stiskněte Ctrl+C nebo zavřete okno.    ║');
         console.log('╚══════════════════════════════════════════════════════════╝');
         console.log('');
     } else {
-        console.error('❌ Chrome nenalezen! Otevřete ručně: ' + KIOSK_URL);
+        console.error('❌ Chrome nenalezen! Otevřete: ' + KIOSK_URL);
     }
 }
 
-// Cleanup on exit
+// Graceful shutdown
 process.on('SIGINT', () => {
-    console.log('\n👋 Ukončuji aplikaci...');
-    process.exit();
+    console.log('\n👋 Ukončuji vše...');
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('\n👋 Ukončuji vše...');
+    process.exit(0);
 });
