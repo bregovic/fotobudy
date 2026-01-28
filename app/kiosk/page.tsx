@@ -425,12 +425,7 @@ export default function KioskPage() {
         let mounted = true; setStreamStatus('live'); addLog('Startuji Stream...');
         const loop = async () => {
             if (!mounted) return;
-
-            // PAUSE STREAM DURING CAPTURE to prevent "Device Busy"
-            if (status === 'processing' || status === 'countdown') {
-                setTimeout(loop, 500);
-                return;
-            }
+            // Loop continues...
 
             try {
                 const path = (activePort === 5521 || activePort === 5514) ? '/live' : '/liveview.jpg';
