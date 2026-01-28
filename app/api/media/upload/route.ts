@@ -54,11 +54,18 @@ export async function POST(req: NextRequest) {
 
             const media = await prisma.media.create({
                 data: {
-                    url: publicUrl, // Warning: If FS is ephemeral, this URL might 404 unless we serve from DB.
+                    url: `/api/media/image/${Date.now()}`, // Placeholder, will update below
                     type: type as string,
                     localPath: originalLocalPath,
                     data: processedBuffer // Storing the image BLOB
                 }
+            });
+
+            // Update URL with actual ID
+            const dbUrl = `/api/media/image/${media.id}`;
+            await prisma.media.update({
+                where: { id: media.id },
+                data: { url: dbUrl }
             });
 
             console.log(`[UPLOAD] Cloud DB Saved: ${media.id}`);
@@ -70,7 +77,7 @@ export async function POST(req: NextRequest) {
 
             return NextResponse.json({
                 success: true,
-                url: publicUrl,
+                url: dbUrl,
                 filename: webFilename,
                 id: media.id
             });
