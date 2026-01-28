@@ -28,6 +28,7 @@ export default function ProfilePage() {
 
     // Loading State
     const [loading, setLoading] = useState(false);
+    const [emailLog, setEmailLog] = useState<string | null>(null);
 
     // Načtení z DB
     useEffect(() => {
@@ -52,7 +53,6 @@ export default function ProfilePage() {
                 // AI
                 if (data.openai_api_key) setOpenAiKey(data.openai_api_key);
 
-                // Cloud
                 // Cloud
                 const cloudVal = data.use_cloud_stream;
                 if (cloudVal !== undefined && cloudVal !== null && cloudVal !== '') {
@@ -156,14 +156,13 @@ export default function ProfilePage() {
     };
 
     const handleTestEmail = async () => {
-        if (!smtpUser.includes('@')) { alert('Vyplňte správně email uživatele (bude použit jako odesílatel i příjemce testu).'); return; }
+        if (!smtpUser.includes('@')) { alert('Vyplňte správně email uživatele.'); return; }
 
-        // 1. Uložit aktuální nastavení
+        setEmailLog('Odesílám test...');
         const saved = await handleSave(true);
-        if (!saved) return;
+        if (!saved) { setEmailLog('Chyba ukládání nastavení před testem.'); return; }
 
-        // 2. Odeslat test
-        if (!confirm(`Nastavení uloženo.\nTeď odešlu testovací email na: ${smtpUser}\nPokračovat?`)) return;
+        if (!confirm(`Nastavení uloženo. Odeslat test na: ${smtpUser}?`)) return;
 
         try {
             const res = await fetch('/api/email', {
@@ -173,12 +172,17 @@ export default function ProfilePage() {
             });
             const d = await res.json();
 
+            setEmailLog(`[${new Date().toLocaleTimeString()}] Odpověď serveru:\n${JSON.stringify(d, null, 2)}`);
+
             if (d.success) {
-                alert(`✅ Test úspěšný!\nServer odpověděl: ${d.response}\nMessage ID: ${d.messageId}\n\nPokud email nedorazil, zkontrolujte SPAM.`);
+                alert(`✅ Test úspěšný!\nMessage ID: ${d.messageId}`);
             } else {
-                alert('❌ Chyba odesílání:\n' + d.error);
+                alert('❌ Chyba odesílání.');
             }
-        } catch (e) { alert('Chyba komunikace se serverem.'); }
+        } catch (e: any) {
+            setEmailLog(`Chyba komunikace:\n${e.message}`);
+            alert('Chyba komunikace se serverem.');
+        }
     };
 
     const handleLogout = () => {
@@ -316,10 +320,18 @@ export default function ProfilePage() {
                 <div className="space-y-4">
                     <div className="flex items-center justify-between border-b border-emerald-500/30 pb-2">
                         <h3 className="text-lg font-semibold text-emerald-400">📧 Email & SMTP</h3>
-                        <button onClick={handleTestEmail} className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs rounded border border-slate-600 transition-colors">
-                            Odeslat test ⚡
-                        </button>
+                        <div className="flex flex-col items-end gap-2">
+                            <button onClick={handleTestEmail} className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs rounded border border-slate-600 transition-colors">
+                                Odeslat test ⚡
+                            </button>
+                        </div>
                     </div>
+
+                    {emailLog && (
+                        <div className="text-xs font-mono bg-black p-2 rounded border border-slate-700 text-slate-300 whitespace-pre-wrap overflow-x-auto max-h-40">
+                            {emailLog}
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="md:col-span-2">
