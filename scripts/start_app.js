@@ -72,12 +72,26 @@ console.log('');
 console.log('─────────────────────────────────────────────────────────────');
 console.log('');
 
-const server = spawn('npx', ['next', 'dev', '-p', LOCAL_PORT.toString()], {
-    stdio: 'inherit',  // Sdílí konzoli s tímto procesem
-    cwd: process.cwd(),
-    shell: true,
-    windowsHide: true
-});
+// Najít next binary
+const nextBin = path.join(process.cwd(), 'node_modules', '.bin', 'next.cmd');
+const nextModule = path.join(process.cwd(), 'node_modules', 'next', 'dist', 'bin', 'next');
+
+let server;
+if (fs.existsSync(nextBin)) {
+    // Windows: použít .cmd script přímo
+    server = spawn(nextBin, ['dev', '-p', LOCAL_PORT.toString()], {
+        stdio: 'inherit',
+        cwd: process.cwd(),
+        windowsHide: true
+    });
+} else {
+    // Fallback: node + next module
+    server = spawn('node', [nextModule, 'dev', '-p', LOCAL_PORT.toString()], {
+        stdio: 'inherit',
+        cwd: process.cwd(),
+        windowsHide: true
+    });
+}
 
 server.on('error', (err) => {
     console.error('❌ Server error:', err.message);

@@ -98,9 +98,9 @@ $encoderParams.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter($en
 $newImg.Save('${tempPath.replace(/\\/g, '\\\\')}', $codecInfo, $encoderParams);
 $img.Dispose(); $newImg.Dispose(); $graph.Dispose();
 `;
-        const command = `powershell -Command "${psScript.replace(/\r?\n/g, ' ')}"`;
+        const command = `powershell -WindowStyle Hidden -Command "${psScript.replace(/\r?\n/g, ' ')}"`;
 
-        exec(command, { maxBuffer: 1024 * 1024 * 10 }, (error) => {
+        exec(command, { maxBuffer: 1024 * 1024 * 10, windowsHide: true }, (error) => {
             if (error) {
                 reject(error);
             } else {

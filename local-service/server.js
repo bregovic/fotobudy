@@ -333,8 +333,9 @@ $graph.DrawImage($img, 0, 0, $newWidth, $newHeight);
 $newImg.Save('${outputPath}', [System.Drawing.Imaging.ImageFormat]::Jpeg);
 $img.Dispose(); $newImg.Dispose(); $graph.Dispose();
 `;
-        const command = `powershell -Command "${psScript.replace(/\r?\n/g, ' ')}"`;
-        exec(command, { maxBuffer: 1024 * 1024 * 10 }, (error) => { if (error) reject(error); else resolve(); });
+        // -WindowStyle Hidden prevents the CMD window from appearing
+        const command = `powershell -WindowStyle Hidden -Command "${psScript.replace(/\r?\n/g, ' ')}"`;
+        exec(command, { maxBuffer: 1024 * 1024 * 10, windowsHide: true }, (error) => { if (error) reject(error); else resolve(); });
     });
 }
 
