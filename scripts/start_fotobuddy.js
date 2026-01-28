@@ -1,53 +1,70 @@
 const { spawn, exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
+const http = require('http');
 
-// KONFIGURACE CEST (Upravte, pokud máte nainstalováno jinam)
+// KONFIGURACE CEST
 const DIGICAM_PATH = 'C:\\Program Files (x86)\\digiCamControl\\CameraControl.exe';
 const CHROME_PATH_1 = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const CHROME_PATH_2 = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
 
-const KIOSK_URL = 'https://cvak.up.railway.app/kiosk';
+// LOKÁLNÍ URL (Už ne Railway!)
+const LOCAL_PORT = 3000;
+const KIOSK_URL = `http://localhost:${LOCAL_PORT}/kiosk`;
 
-console.log('🚀 Startuji FotoBuddy System...');
+console.log('🚀 Startuji FotoBuddy LOCAL APP...');
 
-// 1. Start DigicamControl
+// 1. Spustit DigicamControl (Kamera)
 if (fs.existsSync(DIGICAM_PATH)) {
     console.log('📷 Startuji DigicamControl...');
-    // Spustíme detached, aby nezablokoval skript
     spawn(DIGICAM_PATH, [], { detached: true, stdio: 'ignore' }).unref();
 } else {
-    console.log('⚠️ DigicamControl nenalezen na standardní cestě. Ujistěte se, že běží.');
+    console.log('ℹ️ DigicamControl nenalezen (možná běží?).');
 }
 
-// 2. Start Proxy (na pozadí)
-console.log('bridge Startuji Bridge (Proxy)...');
-const proxy = spawn('node', ['scripts/stream_proxy.js'], { stdio: 'inherit' });
+// 2. Spustit Lokální Server (Next.js)
+console.log('🧠 Startuji lokální mozek aplikace (Server)...');
+const server = spawn('cmd.exe', ['/c', 'npx next dev -p ' + LOCAL_PORT], {
+    stdio: 'inherit', // Aby bylo vidět co server vypisuje
+    cwd: process.cwd()
+});
 
-// 3. Start Prohlížeče v Kiosk módu s povoleným Mixed Content
-// Tím obejdeme problém, že HTTPS web nemůže číst HTTP kameru.
-const chromePath = fs.existsSync(CHROME_PATH_1) ? CHROME_PATH_1 : (fs.existsSync(CHROME_PATH_2) ? CHROME_PATH_2 : null);
+// 3. Počkat až server naběhne a pak spustit Okno
+console.log('⏳ Čekám na nastartování serveru...');
 
-if (chromePath) {
-    console.log('🖥️ Otevírám Kiosk interface...');
+function checkServer() {
+    http.get(KIOSK_URL, (res) => {
+        if (res.statusCode === 200) {
+            console.log('✅ Server běží! Otevírám aplikaci...');
+            openChromeApp();
+        } else {
+            setTimeout(checkServer, 1000);
+        }
+    }).on('error', () => {
+        setTimeout(checkServer, 1000);
+    });
+}
+// Začít kontrolovat za 2s
+setTimeout(checkServer, 2000);
 
-    // --kiosk: Fullscreen bez lišt
-    // --allow-running-insecure-content: POVOLÍ načítání HTTP kamery do HTTPS webu (Klíčová věc!)
-    // --autoplay-policy=no-user-gesture-required: Povolí video hned
-    const args = [
-        '--new-window',
-        '--allow-running-insecure-content',
-        '--autoplay-policy=no-user-gesture-required',
-        '--start-maximized',
-        // '--kiosk', // Odkomentujte pro finální produkční mód (nejde z něj vyskočit myší)
-        KIOSK_URL
-    ];
 
-    spawn(chromePath, args, { detached: true, stdio: 'ignore' }).unref();
-} else {
-    console.error('❌ Google Chrome nenalezen! Otevřete prosím ručně: ' + KIOSK_URL);
+function openChromeApp() {
+    const chromePath = fs.existsSync(CHROME_PATH_1) ? CHROME_PATH_1 : (fs.existsSync(CHROME_PATH_2) ? CHROME_PATH_2 : null);
+
+    if (chromePath) {
+        // --app=URL udělá z webu "aplikaci" bez lišt
+        const args = [
+            `--app=${KIOSK_URL}`,
+            '--start-maximized',
+            '--kiosk', // Fullscreen mód
+            '--autoplay-policy=no-user-gesture-required',
+            '--user-data-dir=C:\\Temp\\ChromeKioskData' // Oddělený profil, aby se nepletl s běžným prohlížením
+        ];
+
+        spawn(chromePath, args, { detached: true, stdio: 'ignore' }).unref();
+    } else {
+        console.error('❌ Chrome nenalezen! Otevřete ručně: ' + KIOSK_URL);
+    }
 }
 
-console.log('✅ Vše spuštěno! Tento terminál nechte běžet pro komunikaci s cloudem.');
-console.log('   (Pro ukončení stiskněte Ctrl+C)');
+console.log('💡 TIP: Pro ukončení zavřete toto okno.');
