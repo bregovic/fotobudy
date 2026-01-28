@@ -78,7 +78,7 @@ export async function GET() {
         });
     }
 
-    return new NextResponse(latestFrame, {
+    return new NextResponse(new Uint8Array(latestFrame), {
         headers: {
             'Content-Type': 'image/jpeg',
             'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',

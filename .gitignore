@@ -45,3 +45,9 @@ public/photos/*
 !public/photos/.gitkeep
 public/live.jpg
 public/liveview.jpg
+
+# Local sync mapping (machine-specific)
+sync_map.json
+
+# Local settings (contains credentials)
+settings.json
