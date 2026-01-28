@@ -41,8 +41,16 @@ const LiveView = memo(({
                 onError={(e) => {
                     const t = e.currentTarget;
                     setHasError(true);
-                    if (useCloudStream) setTimeout(() => setTick(Date.now()), 1000);
-                    else if (t.src.includes('5521')) t.src = `http://${cameraIp}:5520/liveview.jpg`;
+                    if (useCloudStream) {
+                        setTimeout(() => setTick(Date.now()), 1000);
+                    } else {
+                        // Rotation logic for direct connection
+                        const currentSrc = t.src;
+                        if (currentSrc.includes('5521')) t.src = `http://${cameraIp}:5514/live`;
+                        else if (currentSrc.includes('5514')) t.src = `http://${cameraIp}:5520/liveview.jpg`;
+                        else if (currentSrc.includes('5520')) t.src = `http://${cameraIp}:5513/liveview.jpg`;
+                        else if (currentSrc.includes('5513')) t.src = `http://${cameraIp}:5521/live`; // Back to start
+                    }
                 }}
             />
             {hasError && (
