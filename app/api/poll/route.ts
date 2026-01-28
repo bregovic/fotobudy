@@ -1,37 +1,41 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import fs from 'fs';
+import path from 'path';
 
 export const dynamic = 'force-dynamic';
 
-const prisma = new PrismaClient();
-
 export async function GET(request: Request) {
     try {
-        const { searchParams } = new URL(request.url);
-        const sessionId = searchParams.get('sessionId');
+        // [LOCAL ONLY MODE] - Scan public/photos for latest file
+        const publicDir = path.join(process.cwd(), 'public', 'photos');
+        let latestMedia = null;
 
-        // 1. Zkontrolujeme pending commandy (stará logika pro Remote Trigger - zatím necháme, i když nepoužíváme)
-        // ... (vynecháme pro zjednodušení, cloud trigger řešíme jinak)
+        if (fs.existsSync(publicDir)) {
+            const files = fs.readdirSync(publicDir)
+                .map(f => {
+                    const lower = f.toLowerCase();
+                    return { name: f, lower, time: fs.statSync(path.join(publicDir, f)).mtime.getTime() };
+                })
+                .filter(f => f.lower.endsWith('.jpg') || f.lower.endsWith('.jpeg'))
+                .sort((a, b) => b.time - a.time);
 
-        // 2. Najdeme NEJNOVĚJŠÍ fotku/média v celém systému
-        // To nám umožní detekovat, že se něco vyfotilo
-        const latestMedia = await prisma.media.findFirst({
-            orderBy: { createdAt: 'desc' },
-            take: 1
-        });
+            if (files.length > 0) {
+                const newest = files[0];
+                latestMedia = {
+                    id: newest.name, // Use filename as ID
+                    url: `/photos/${newest.name}`,
+                    createdAt: new Date(newest.time)
+                };
+            }
+        }
 
-        // 3. Vrátíme info
         return NextResponse.json({
             pending: false,
-            latest: latestMedia ? {
-                id: latestMedia.id,
-                url: latestMedia.url,
-                createdAt: latestMedia.createdAt
-            } : null
+            latest: latestMedia
         });
 
-    } catch (error) {
-        console.warn("Poll error (DB issue?):", error);
-        return NextResponse.json({ pending: false, error: 'DB_ERROR' });
+    } catch (error: any) {
+        console.warn("Poll error:", error);
+        return NextResponse.json({ pending: false, error: error.message }, { status: 500 });
     }
 }

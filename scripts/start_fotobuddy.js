@@ -52,11 +52,20 @@ function openChromeApp() {
     const chromePath = fs.existsSync(CHROME_PATH_1) ? CHROME_PATH_1 : (fs.existsSync(CHROME_PATH_2) ? CHROME_PATH_2 : null);
 
     if (chromePath) {
-        // --app=URL udělá z webu "aplikaci" bez lišt
+        // 3. Spustit FILE WATCHER (Hlídač složky s fotkami)
+        console.log('👀 Spouštím hlídače nových fotek...');
+        const watcher = spawn('node', ['scripts/watch_folder.js'], {
+            stdio: 'ignore', // Běží na pozadí, neruší výpisem
+            detached: true
+        });
+        watcher.unref(); // Nečekat na něj při ukončení launcheru
+
+        // 4. Spustit Chrome v Kiosk módu
+        console.log('🚀 Spouštím Kiosk...');
         const args = [
             `--app=${KIOSK_URL}`,
             '--start-maximized',
-            '--kiosk', // Fullscreen mód
+            '--kiosk',
             '--autoplay-policy=no-user-gesture-required',
             '--user-data-dir=C:\\Temp\\ChromeKioskData' // Oddělený profil, aby se nepletl s běžným prohlížením
         ];

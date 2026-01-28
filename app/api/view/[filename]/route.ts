@@ -1,29 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '../../../../lib/prisma';
+import fs from 'fs';
+import path from 'path';
 
 // Next.js 15+ Change: context.params is now a Promise!
 export async function GET(req: NextRequest, context: { params: Promise<{ filename: string }> }) {
-    // Musíme počkat na parametry
     const { filename } = await context.params;
 
     try {
-        // 1. Hledat v Media (Fotky)
-        let media: any = await prisma.media.findFirst({
-            where: { url: { endsWith: filename } }
-        });
+        const filePath = path.join(process.cwd(), 'public', 'photos', filename);
 
-        // 2. Pokud není fotka, hledat v Assetech (Pozadí/Stickery)
-        if (!media) {
-            media = await prisma.asset.findFirst({
-                where: { url: { endsWith: filename } }
-            });
-        }
-
-        if (!media || !media.data) {
+        if (!fs.existsSync(filePath)) {
             return new NextResponse('Not Found', { status: 404 });
         }
 
-        return new NextResponse(media.data, {
+        const fileBuffer = fs.readFileSync(filePath);
+
+        return new NextResponse(fileBuffer, {
             headers: {
                 'Content-Type': 'image/jpeg',
                 'Cache-Control': 'public, max-age=31536000, immutable'

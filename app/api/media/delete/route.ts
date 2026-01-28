@@ -1,27 +1,47 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '../../../../lib/prisma';
+import { NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 
-export async function POST(req: NextRequest) {
+export async function POST(request: Request) {
     try {
-        const { url } = await req.json();
+        const body = await request.json();
+        let idsToDelete: string[] = [];
 
-        if (!url) return NextResponse.json({ error: 'Missing URL' }, { status: 400 });
+        if (body.ids && Array.isArray(body.ids)) {
+            idsToDelete = body.ids;
+        } else if (body.url) {
+            // Extract filename from URL
+            const filename = body.url.split('/').pop();
+            if (filename) idsToDelete.push(filename);
+        }
 
-        // Najdeme název souboru z URL
-        const filename = url.split('/').pop();
+        if (idsToDelete.length === 0) {
+            return NextResponse.json({ error: 'No IDs provided' }, { status: 400 });
+        }
 
-        // Smažeme záznamy, které končí tímto souborem
-        const deleteResult = await prisma.media.deleteMany({
-            where: {
-                url: { endsWith: filename }
+        console.log(`[DELETE] Mažu ${idsToDelete.length} položek...`);
+
+        const publicDir = path.join(process.cwd(), 'public', 'photos');
+        let deletedCount = 0;
+
+        for (const id of idsToDelete) {
+            // ID IS THE FILENAME in our new FS-only system
+            const filePath = path.join(publicDir, id);
+            if (fs.existsSync(filePath)) {
+                try {
+                    fs.unlinkSync(filePath);
+                    console.log(`   -> Smazáno: ${id}`);
+                    deletedCount++;
+                } catch (e) {
+                    console.error(`   -> Chyba mazání ${id}:`, e);
+                }
             }
-        });
+        }
 
-        console.log(`[DELETE] Deleted ${deleteResult.count} items for ${filename}`);
+        return NextResponse.json({ success: true, count: deletedCount });
 
-        return NextResponse.json({ success: true });
-
-    } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+    } catch (error: any) {
+        console.error('Delete error:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

@@ -15,13 +15,12 @@ app.use(express.json());
 
 // --- KONFIGURACE ---
 const DCC_API_URL = 'http://127.0.0.1:5520/?CMD=Capture';
+const LIVE_VIEW_URL = 'http://127.0.0.1:5566/'; // Optimizer URL
 const SAVE_DIR = path.join(process.cwd(), 'public', 'photos');
-const CLOUD_API_URL = 'https://cvak.up.railway.app';
-const SNAPSHOT_API_URL = `${CLOUD_API_URL}/api/stream/snapshot`;
-const CLOUD_UPLOAD_URL = `${CLOUD_API_URL}/api/media/upload`;
+const LOCAL_ONLY = true;
 
-// FPS pro Snapshoty (ZRYCHLENÍ: 4 -> 10)
-const SNAPSHOT_FPS = 10;
+const CLOUD_API_URL = 'https://cvak.up.railway.app';
+const CLOUD_UPLOAD_URL = `${CLOUD_API_URL}/api/media/upload`;
 
 let isCapturing = false;
 
@@ -35,43 +34,166 @@ const optimizer = spawn('powershell', [
     '-File', path.join(__dirname, 'optimize-stream.ps1')
 ]);
 optimizer.on('error', (err) => console.error('[OPTIMIZER] Failed to start:', err));
-optimizer.stderr.on('data', (d) => console.error(`[OPT-ERR]: ${d}`));
+// Ignorujeme běžné logy, vypisujeme jen chyby
+optimizer.stderr.on('data', (d) => {
+    const msg = d.toString();
+    if (msg.includes('HttpListenerException')) console.log('[OPTIMIZER] Port 5566 busy (OK if already running)');
+    else console.error(`[OPT-ERR]: ${msg}`);
+});
 
+// --- LOCAL MJPEG STREAM ---
+// Endpoint pro lokální klienty (Next.js proxy nebo přímo browser)
+app.get('/stream.mjpg', (req, res) => {
+    res.writeHead(200, {
+        'Content-Type': 'multipart/x-mixed-replace; boundary=--myboundary',
+        'Cache-Control': 'no-cache',
+        'Connection': 'close',
+        'Pragma': 'no-cache'
+    });
+
+    let active = true;
+
+    req.on('close', () => { active = false; });
+    req.on('end', () => { active = false; });
+
+    const sendFrame = () => {
+        if (!active) return;
+
+        // 1. Try Optimizer First (5566), Fallback to Raw DCC (5520)
+        const tryFetch = (url, isRetry = false) => {
+            http.get(url, (frameRes) => {
+                if (frameRes.statusCode !== 200) {
+                    if (!isRetry) {
+                        // Fallback to Raw
+                        tryFetch('http://127.0.0.1:5520/liveview.jpg', true);
+                    } else {
+                        setTimeout(sendFrame, 500);
+                    }
+                    frameRes.resume();
+                    return;
+                }
+
+                const chunks = [];
+                frameRes.on('data', c => chunks.push(c));
+                frameRes.on('end', () => {
+                    if (!active) return;
+                    const buffer = Buffer.concat(chunks);
+                    res.write(`--myboundary\nContent-Type: image/jpeg\nContent-Length: ${buffer.length}\n\n`);
+                    res.write(buffer);
+                    res.write('\n');
+                    setTimeout(sendFrame, 66);
+                });
+            }).on('error', (e) => {
+                if (!isRetry) {
+                    // Fallback to Raw
+                    tryFetch('http://127.0.0.1:5520/liveview.jpg', true);
+                } else {
+                    setTimeout(sendFrame, 1000);
+                }
+            });
+        };
+
+        tryFetch(LIVE_VIEW_URL);
+    };
+
+    sendFrame();
+});
+
+
+// --- SHOOT HANDLER (FIRE & FORGET) ---
 app.post('/shoot', async (req, res) => {
     if (isCapturing) return res.status(429).json({ success: false, error: 'Camera busy' });
-    console.log('[BRIDGE] Capture start...');
+
+    console.log('[BRIDGE] Capture requested...');
     isCapturing = true;
-    const startTime = Date.now();
+
     try {
-        await new Promise((resolve, reject) => {
-            http.get(DCC_API_URL, (res) => {
-                if (res.statusCode < 200 || res.statusCode > 299) reject(new Error(`DCC Error ${res.statusCode}`));
-                else { res.resume(); resolve(); }
-            }).on('error', reject);
-        });
+        // Trigger Camera via DCC - Fire and forget mostly
+        http.get(DCC_API_URL, (dccRes) => {
+            if (dccRes.statusCode < 200 || dccRes.statusCode > 299) {
+                console.error(`[BRIDGE] DCC Error ${dccRes.statusCode}`);
+            }
+            dccRes.resume();
+        }).on('error', (e) => console.error('[BRIDGE] DCC Connection Failed', e));
 
-        console.log('[BRIDGE] Triggered. Waiting for file...');
-        const foundFile = await waitForNewFile(SAVE_DIR, startTime, 15000);
+        // Return SUCCESS immediately to the UI
+        res.json({ success: true, message: 'Triggered' });
 
-        // Resize & Upload
-        let uploadPath = path.join(SAVE_DIR, foundFile);
-        try {
-            const resizedPath = path.join(os.tmpdir(), `web_${foundFile}`);
-            await resizeImagePowershell(uploadPath, resizedPath, 1200);
-            uploadPath = resizedPath;
-        } catch (e) { console.error('Resize fail', e); }
-
-        const publicUrl = await uploadToCloud(uploadPath, foundFile);
-        console.log(`[BRIDGE] Upload done: ${publicUrl}`);
-        res.json({ success: true, filename: foundFile, url: publicUrl });
+        // Reset lock quickly
+        setTimeout(() => { isCapturing = false; }, 2000);
 
     } catch (e) {
         console.error(`[ERROR] ${e.message}`);
         res.status(500).json({ success: false, error: e.message });
-    } finally {
         isCapturing = false;
     }
 });
+
+// STARTUP: FORCE LIVE VIEW ON
+setTimeout(() => {
+    console.log('[INIT] Sending Auto LiveAPI Trigger...');
+    http.get('http://127.0.0.1:5520/?cmd=LiveView_Show', (res) => {
+        // We expect this might fail if DCC is still showing the dialog, but we try anyway
+        console.log('[INIT] LiveView Trigger Sent.');
+        res.resume();
+    }).on('error', () => console.log('[INIT] LiveView Trigger - DCC not ready yet.'));
+
+    // Try again in 10s just in case
+    setTimeout(() => {
+        http.get('http://127.0.0.1:5520/?cmd=LiveView_Show').on('error', () => { });
+    }, 10000);
+}, 5000);
+
+// --- BACKGROUND PROCESSING LOOP ---
+// Checks for new photos and generates 'web_' versions for gallery
+function startBackgroundProcessing() {
+    console.log('[BG] Starting photo processor...');
+    setInterval(async () => {
+        try {
+            const files = fs.readdirSync(SAVE_DIR);
+
+            // Find original JPEGs that don't have a web_ counterpart
+            const originals = files.filter(f =>
+                f.match(/\.(jpg|jpeg)$/i) &&
+                !f.startsWith('web_') &&
+                !f.startsWith('print_') && // Ignore temporary print jobs
+                !files.includes(`web_${f}`)
+            );
+
+            for (const textFile of originals) {
+                const filePath = path.join(SAVE_DIR, textFile);
+
+                // Check if file is "stable" (not being written to)
+                // Simple check: check mtime is at least 2 seconds ago
+                try {
+                    const stats = fs.statSync(filePath);
+                    const now = Date.now();
+                    if (now - stats.mtimeMs < 2000) continue; // Too new, might be writing
+
+                    console.log(`[BG] Processing new photo: ${textFile}`);
+
+                    const tempPath = path.join(os.tmpdir(), `web_${textFile}`);
+
+                    // 1. Resize to temp using PowerShell (robust, no node-canvas needed)
+                    await resizeImagePowershell(filePath, tempPath, 1200);
+
+                    // 2. Move to destination
+                    const destPath = path.join(SAVE_DIR, `web_${textFile}`);
+                    fs.copyFileSync(tempPath, destPath);
+                    fs.unlinkSync(tempPath);
+
+                    console.log(`[BG] Created web version: ${destPath}`);
+
+                } catch (e) {
+                    console.error(`[BG] Error processing ${textFile}:`, e.message);
+                }
+            }
+
+        } catch (e) {
+            console.error('[BG] Loop error:', e);
+        }
+    }, 3000); // Check every 3 seconds
+}
 
 function resizeImagePowershell(inputPath, outputPath, maxWidth) {
     return new Promise((resolve, reject) => {
@@ -95,159 +217,37 @@ $img.Dispose(); $newImg.Dispose(); $graph.Dispose();
     });
 }
 
-function uploadToCloud(filePath, originalFilename) {
-    return new Promise((resolve, reject) => {
-        const fullLocalPath = path.join(SAVE_DIR, originalFilename);
-        // Přidali jsme -F "localPath=..."
-        const curlCmd = `curl -X POST -F "type=PHOTO" -F "file=@${filePath};filename=${originalFilename}" -F "localPath=${fullLocalPath}" ${CLOUD_UPLOAD_URL}`;
-
-        exec(curlCmd, (error, stdout) => {
-            if (error) { resolve(`/api/view/${originalFilename}`); return; }
-            try {
-                const response = JSON.parse(stdout);
-                if (response.url) resolve(response.url); else resolve(`/api/view/${originalFilename}`);
-            } catch (e) { resolve(`/api/view/${originalFilename}`); }
-        });
-    });
-}
-
-// --- SNAPSHOT LOOP (The "Webcam" Logic) ---
-function startSnapshotLoop() {
-    console.log('[SNAPSHOT] Startuji odesílání snímků na Cloud...');
-
-    // Zkusíme nejdřív Optimizer (5566), fallback na RAW (5520)
-    let currentSource = 'http://127.0.0.1:5566/';
-
-    const oneFrame = () => {
-        const req = http.get(currentSource, (res) => {
-            if (res.statusCode !== 200) {
-                res.resume();
-                if (currentSource.includes('5566')) {
-                    // Fallback
-                    currentSource = 'http://127.0.0.1:5520/liveview.jpg';
-                    setTimeout(oneFrame, 100);
-                } else {
-                    setTimeout(oneFrame, 1000); // Wait on error
-                }
-                return;
-            }
-
-            // Stáhneme obrázek do paměti a pošleme na Cloud
-            const chunks = [];
-            res.on('data', c => chunks.push(c));
-            res.on('end', () => {
-                const buffer = Buffer.concat(chunks);
-
-                // POST na Cloud
-                const upload = https.request(SNAPSHOT_API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'image/jpeg',
-                        'Content-Length': buffer.length
-                    }
-                }, (upRes) => {
-                    upRes.on('data', () => { }); // Consume
-                    upRes.on('end', () => setTimeout(oneFrame, 1000 / SNAPSHOT_FPS));
-                });
-
-                upload.on('error', () => setTimeout(oneFrame, 500));
-                upload.write(buffer);
-                upload.end();
-            });
-
-        });
-
-        req.on('error', () => {
-            if (currentSource.includes('5566')) {
-                currentSource = 'http://127.0.0.1:5520/liveview.jpg';
-            }
-            setTimeout(oneFrame, 500);
-        });
-    };
-    oneFrame();
-}
 
 app.post('/print', (req, res) => {
     let { filename } = req.body;
-
-    // UI může poslat 'web_DSC_0001.jpg', ale my chceme tisknout originál 'DSC_0001.jpg'
-    if (filename.startsWith('web_')) {
+    // Strip web_ prefix if present to print the original high-res file
+    if (filename && filename.startsWith('web_')) {
         filename = filename.replace('web_', '');
     }
 
     const filePath = path.join(SAVE_DIR, filename);
     console.log(`[PRINT] Požadavek na tisk: ${filename}`);
-    console.log(`[PRINT] Cesta k originálu: ${filePath}`);
 
     if (!fs.existsSync(filePath)) {
         console.error('[PRINT] Soubor neexistuje!');
         return res.status(404).json({ success: false, error: 'File not found' });
     }
 
-    // Tisk přes MS Paint (nejjednodušší cesta na Windows bez externích utilit)
-    // /p tiskne na VÝCHOZÍ tiskárnu -> Proto musí být Selphy nastavena jako Default.
-    const printCmd = `mspaint /p "${filePath}"`;
-
-    exec(printCmd, (error) => {
-        if (error) console.error('[PRINT] Chyba spuštění tisku:', error);
-        else console.log('[PRINT] Odesláno do fronty.');
+    const printCmd = `powershell -ExecutionPolicy Bypass -File "${path.join(__dirname, 'print-photo.ps1')}" -ImagePath "${filePath}"`;
+    exec(printCmd, (error, stdout, stderr) => {
+        if (error) {
+            console.error('[PRINT] Chyba spuštění tisku:', error);
+            console.error(stderr);
+        } else {
+            console.log('[PRINT] Odesláno do fronty.', stdout);
+        }
     });
-
     res.json({ success: true, message: 'Odesláno na tisk' });
 });
 
-function startCommandPolling() {
-    console.log('[CMD] Polling commands...');
-    const poll = () => {
-        https.get(`${CLOUD_API_URL}/api/command`, (res) => {
-            let data = ''; res.on('data', c => data += c);
-            res.on('end', () => {
-                try {
-                    const json = JSON.parse(data);
-                    if (json.command === 'SHOOT' && !isCapturing) triggerLocalShoot();
-                } catch (e) { }
-                setTimeout(poll, 500);
-            });
-        }).on('error', () => setTimeout(poll, 2000));
-    };
-    poll();
-}
-
-async function triggerLocalShoot() {
-    if (isCapturing) return;
-    const postData = JSON.stringify({});
-    const req = http.request({
-        hostname: 'localhost', port: PORT, path: '/shoot', method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': postData.length }
-    }, () => { });
-    req.write(postData); req.end();
-}
-
-function waitForNewFile(dir, afterTime, timeoutMs) {
-    return new Promise((resolve, reject) => {
-        const interval = 500; let elapsed = 0;
-        const check = () => {
-            fs.readdir(dir, (err, files) => {
-                if (err) return;
-                const images = files.filter(f => f.match(/\.(jpg|png)$/i) && !f.includes('.tmp'));
-                for (const file of images) {
-                    try {
-                        if (fs.statSync(path.join(dir, file)).mtimeMs > (afterTime - 500)) {
-                            setTimeout(() => resolve(file), 1500); return;
-                        }
-                    } catch (e) { }
-                }
-                elapsed += interval;
-                if (elapsed >= timeoutMs) reject(new Error('Timeout')); else setTimeout(check, interval);
-            });
-        };
-        check();
-    });
-}
-
 app.listen(PORT, () => {
-    console.log(`\n📷 FotoBuddy Bridge (SNAPSHOT MODE) running on ${PORT}`);
-    console.log(`ℹ️  Posílám statické snímky na Cloud (Webcam Style).`);
-    startSnapshotLoop();
-    startCommandPolling();
+    console.log(`\n📷 Blick & Cvak Bridge (LOCAL STREAM MODE) running on ${PORT}`);
+    console.log(`   -> Live View Stream: http://localhost:${PORT}/stream.mjpg`);
+    console.log(`   -> Photos Dir: ${SAVE_DIR}`);
+    startBackgroundProcessing();
 });

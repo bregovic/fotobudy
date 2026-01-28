@@ -5,6 +5,17 @@ import path from 'path';
 // Tento soubor bude sloužit jako sdílená paměť pro poslední snímek
 const LIVE_IMAGE_PATH = path.join(process.cwd(), 'public', 'live.jpg');
 
+// CORS Helper
+const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+export async function OPTIONS() {
+    return NextResponse.json({}, { headers: corsHeaders });
+}
+
 // POST: Bridge sem nahraje aktuální snímek z kamery
 export async function POST(req: NextRequest) {
     try {
@@ -13,9 +24,9 @@ export async function POST(req: NextRequest) {
 
         fs.writeFileSync(LIVE_IMAGE_PATH, buffer);
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true }, { headers: corsHeaders });
     } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return NextResponse.json({ error: e.message }, { status: 500, headers: corsHeaders });
     }
 }
 
