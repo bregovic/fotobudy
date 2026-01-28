@@ -445,9 +445,11 @@ export default function KioskPage() {
                 setTimeout(loop, 200);
             } catch (e: any) {
                 if (mounted) {
-                    console.error("Stream Loop Error:", e);
-                    // Only log distinctive errors to avoid spam
-                    if (Math.random() > 0.9) addLog(`Chyba streamu: ${e.message}`);
+                    // Suppress common fetch errors to reduce noise
+                    if (e.message !== 'Failed to fetch') {
+                        console.error("Stream Loop Error:", e);
+                        if (Math.random() > 0.9) addLog(`Chyba streamu: ${e.message}`);
+                    }
                     setStreamStatus('error');
                     setTimeout(loop, 1000);
                 }
@@ -797,12 +799,13 @@ export default function KioskPage() {
     const [isLocal, setIsLocal] = useState(true);
 
     useEffect(() => {
-        const check = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+        const h = window.location.hostname;
+        const check = typeof window !== 'undefined' && (h === 'localhost' || h === '127.0.0.1');
+        console.log(`[ENV] Hostname: ${h}, isLocal: ${check}`);
         setIsLocal(check);
         if (!check) {
             setIsScanning(false);
             setActivePort(null);
-            // We are Viewer, so we don't stream OUT.
             setCloudStreamEnabled(false);
         }
     }, []);
@@ -811,6 +814,9 @@ export default function KioskPage() {
 
     return (
         <div className="relative w-full h-full bg-slate-950 overflow-hidden flex flex-col items-center justify-center select-none">
+            {/* Debug / Cloud Indicator */}
+            {!isLocal && <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-blue-600/50 px-3 py-1 rounded-full text-[10px] font-bold text-white z-[60] backdrop-blur-sm pointer-events-none">☁️ CLOUD VIEW</div>}
+
             {/* Layers */}
             <div className="absolute inset-0 bg-black flex items-center justify-center">
                 {status === 'processing' ? <div className="text-white flex flex-col items-center animate-pulse"><RefreshCw className="animate-spin mb-4" size={48} /><span className="text-2xl font-bold">Zpracovávám...</span></div>
