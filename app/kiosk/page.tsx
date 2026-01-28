@@ -331,9 +331,8 @@ export default function KioskPage() {
 
     useEffect(() => {
         let mounted = true;
-        const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-        if (!isLocal) { setIsScanning(false); setActivePort(null); setCloudStreamEnabled(false); return; }
 
+        // Load Settings
         const savedCmdPort = localStorage.getItem('tech_cmd_port');
         const savedPath = localStorage.getItem('tech_photo_path');
         if (savedCmdPort) setSessionSettings(s => ({ ...s, commandPort: parseInt(savedCmdPort) }));
@@ -794,13 +793,29 @@ export default function KioskPage() {
 
     // --- GALLERY LOGIC END ---
 
+    // Environment Check
+    const [isLocal, setIsLocal] = useState(true);
+
+    useEffect(() => {
+        const check = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+        setIsLocal(check);
+        if (!check) {
+            setIsScanning(false);
+            setActivePort(null);
+            // We are Viewer, so we don't stream OUT.
+            setCloudStreamEnabled(false);
+        }
+    }, []);
+
+    // ... (existing code)
+
     return (
         <div className="relative w-full h-full bg-slate-950 overflow-hidden flex flex-col items-center justify-center select-none">
             {/* Layers */}
             <div className="absolute inset-0 bg-black flex items-center justify-center">
                 {status === 'processing' ? <div className="text-white flex flex-col items-center animate-pulse"><RefreshCw className="animate-spin mb-4" size={48} /><span className="text-2xl font-bold">Zpracovávám...</span></div>
                     : status === 'review' && lastPhoto ? <img src={lastPhoto} className="w-full h-full object-contain bg-slate-900" />
-                        : <div className="w-full h-full relative flex items-center justify-center"><LiveView streamUrl={finalStreamUrl} isBW={sessionSettings.isBW} isScanning={isScanning} error={!isScanning && !activePort} className="w-full h-full object-contain" onRestart={restartLiveView} onStreamError={() => { console.warn("Stream drop, retrying..."); setStreamToken(Date.now()); }} printWidth={sessionSettings.printWidth} printHeight={sessionSettings.printHeight} /></div>}
+                        : <div className="w-full h-full relative flex items-center justify-center"><LiveView streamUrl={finalStreamUrl} isBW={sessionSettings.isBW} isScanning={isScanning} error={isLocal && !isScanning && !activePort} className="w-full h-full object-contain" onRestart={restartLiveView} onStreamError={() => { console.warn("Stream drop, retrying..."); setStreamToken(Date.now()); }} printWidth={sessionSettings.printWidth} printHeight={sessionSettings.printHeight} /></div>}
             </div>
 
             {status === 'countdown' && <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-50"><div className="text-[15rem] font-black text-white drop-shadow-2xl animate-bounce">{countdown}</div></div>}
