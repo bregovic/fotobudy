@@ -1,12 +1,12 @@
 @echo off
 chcp 65001 >nul
-title FotoBuddy LOCAL APP 📸🏠
+title Blick & Cvak LOCAL APP 📸🏠
 color 0E
 cls
 
 echo.
 echo  =============================================================
-echo     F O T O B U D D Y   -   L O K A L N I   A P L I K A C E
+echo     B L I C K   &   C V A K   -   L O K A L N I   A P L I K A C E
 echo  =============================================================
 echo.
 echo   Startuji lokalni server (rychlejsi) + DigicamControl...
@@ -17,15 +17,15 @@ echo.
 cd /d "%~dp0"
 
 :: Kontrola
-if not exist "scripts\start_fotobuddy.js" (
+if not exist "scripts\start_app.js" (
     color 0C
-    echo [CHYBA] Nenalezen script/start_fotobuddy.js!
+    echo [CHYBA] Nenalezen script/start_app.js!
     pause
     exit
 )
 
 :: Spuštění Launcheru
-node scripts\start_fotobuddy.js
+node scripts\start_app.js
 
 echo.
 echo  =============================================================

@@ -94,8 +94,7 @@ export default function GalleryPage() {
             });
             const data = await res.json();
 
-            if (data.simulated) showToast('✉️ Simulace: Email jakože odeslán.');
-            else if (data.success) showToast('Email odeslán! ✅');
+            if (data.success) showToast('Email odeslán! ✅');
             else showToast('Chyba odesílání ❌');
 
             setShowEmailModal(false);

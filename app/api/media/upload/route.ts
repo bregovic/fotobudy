@@ -4,6 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 
+const IS_CLOUD = !!process.env.RAILWAY_ENVIRONMENT_NAME;
+
 export async function POST(req: NextRequest) {
     try {
         const formData = await req.formData();
@@ -24,54 +26,72 @@ export async function POST(req: NextRequest) {
         const safeName = originalName.replace(/[^a-zA-Z0-9.-]/g, '_');
         const webFilename = isPrint ? `print_${safeName}` : `web_${safeName}`;
 
-        // Cesta kam uložit webovou verzi
+        let processedBuffer: Buffer;
+
+        if (isPrint) {
+            // PRO TISK: Necháme originál (nebo jen lehce zmenšíme pokud je obří)
+            processedBuffer = await sharp(buffer)
+                .resize(2400, 2400, { fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 95 })
+                .toBuffer();
+        } else {
+            // OPTIMALIZACE: Zmenšíme fotku pro web
+            processedBuffer = await sharp(buffer)
+                .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 80 })
+                .toBuffer();
+        }
+
+        const publicUrl = `/photos/${webFilename}`;
+
+        // --- ☁️ CLOUD MODE (RAILWAY) ---
+        if (IS_CLOUD) {
+            // Save to DB (Persistent)
+            // We assume the URL might need to be /api/media/image/[id] if file system is ephemeral,
+            // but for now we keep publicUrl. If you are serving from DB, you need a viewer route.
+            // If you are using Railway Volume for /public/photos, then FS write is enough and DB is metadata.
+            // Assuming "Strict DB Mode": we save the Blob.
+
+            const media = await prisma.media.create({
+                data: {
+                    url: publicUrl, // Warning: If FS is ephemeral, this URL might 404 unless we serve from DB.
+                    type: type as string,
+                    localPath: originalLocalPath,
+                    data: processedBuffer // Storing the image BLOB
+                }
+            });
+
+            console.log(`[UPLOAD] Cloud DB Saved: ${media.id}`);
+
+            // Still write to FS for immediate cache (ephemeral)
+            const publicDir = path.join(process.cwd(), 'public', 'photos');
+            if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+            fs.writeFileSync(path.join(publicDir, webFilename), processedBuffer);
+
+            return NextResponse.json({
+                success: true,
+                url: publicUrl,
+                filename: webFilename,
+                id: media.id
+            });
+        }
+
+        // --- 🏠 LOCAL MODE (OFFLINE) ---
+        // Save to FS only. No DB.
         const publicDir = path.join(process.cwd(), 'public', 'photos');
         if (!fs.existsSync(publicDir)) {
             fs.mkdirSync(publicDir, { recursive: true });
         }
         const webFilePath = path.join(publicDir, webFilename);
-        const publicUrl = `/photos/${webFilename}`;
 
-        if (isPrint) {
-            // PRO TISK: Necháme originál (nebo jen lehce zmenšíme pokud je obří)
-            // Ale pro jistotu uložím buffer přímo, abychom neztratili kvalitu
-            // Případně resize na 300DPI pro 10x15 (cca 1800x1200)
-            await sharp(buffer)
-                .resize(2400, 2400, { fit: 'inside', withoutEnlargement: true }) // Higher limit for print
-                .jpeg({ quality: 95 })
-                .toFile(webFilePath);
-        } else {
-            // OPTIMALIZACE: Zmenšíme fotku pro web (max 1280px, kvalita 80%)
-            await sharp(buffer)
-                .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
-                .jpeg({ quality: 80 })
-                .toFile(webFilePath);
-        }
+        fs.writeFileSync(webFilePath, processedBuffer);
 
-        console.log(`[UPLOAD] Disk OK: ${webFilename}`);
+        console.log(`[UPLOAD] Local Disk Saved: ${webFilename}`);
 
-        // --- FIRE AND FORGET DB WRITE ---
-        // [LOCAL ONLY MODE] Skip DB write to avoid dependency on cloud/railway
-        /*
-        prisma.media.create({
-            data: {
-                url: publicUrl,
-                type: type as string,
-                localPath: originalLocalPath || webFilePath
-            }
-        }).then((media) => {
-            console.log(`[UPLOAD] DB Sync OK: ${media.id}`);
-        }).catch((err) => {
-            console.error(`[UPLOAD] DB Sync Failed:`, err);
-        });
-        */
-
-        // Return Success Immediately
         return NextResponse.json({
             success: true,
             url: publicUrl,
-            filename: webFilename, // Return filename for direct access
-            // id: ... // We don't have ID yet, but that's okay for local print
+            filename: webFilename,
         });
 
     } catch (e: any) {

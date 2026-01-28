@@ -24749,3 +24749,19 @@
 [22:10:58] ✅ SLEDUJI: C:\Fotky
 [22:10:58] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
 [22:10:58] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[23:21:46] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[23:21:46] ✅ SLEDUJI: C:\Fotky
+[23:21:46] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[23:21:46] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[23:22:54] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[23:22:54] ✅ SLEDUJI: C:\Fotky
+[23:22:54] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[23:22:54] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[23:23:36] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[23:23:36] ✅ SLEDUJI: C:\Fotky
+[23:23:36] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[23:23:36] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[23:35:03] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[23:35:03] ✅ SLEDUJI: C:\Fotky
+[23:35:03] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[23:35:03] ✅ SLEDUJI: C:\Users\Wendulka\Pictures

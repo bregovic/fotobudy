@@ -12,7 +12,7 @@ const CHROME_PATH_2 = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chr
 const LOCAL_PORT = 3000;
 const KIOSK_URL = `http://localhost:${LOCAL_PORT}/kiosk`;
 
-console.log('🚀 Startuji FotoBuddy LOCAL APP...');
+console.log('🚀 Startuji Blick & Cvak LOCAL APP...');
 
 // 1. Spustit DigicamControl (Kamera)
 if (fs.existsSync(DIGICAM_PATH)) {

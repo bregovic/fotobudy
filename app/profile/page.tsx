@@ -14,7 +14,7 @@ export default function ProfilePage() {
     const [smtpPass, setSmtpPass] = useState('');
 
     // Email Template Settings
-    const [emailSubject, setEmailSubject] = useState('Tvoje fotka z FotoBuddy! 🥳');
+    const [emailSubject, setEmailSubject] = useState('Tvoje fotka z Blick & Cvak! 🥳');
     const [emailBody, setEmailBody] = useState('Ahoj! Tady je tvoje fotka z akce. Užij si ji!');
 
     // AI Settings

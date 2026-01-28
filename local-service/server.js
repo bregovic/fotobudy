@@ -99,6 +99,37 @@ app.get('/stream.mjpg', (req, res) => {
     sendFrame();
 });
 
+// --- SNAPSHOT ENDPOINT (FOR CLOUD UPLOAD) ---
+// Returns a single JPEG for the frontend loop to upload
+app.get('/liveview.jpg', (req, res) => {
+    const tryFetchOne = (url, isRetry = false) => {
+        http.get(url, (frameRes) => {
+            if (frameRes.statusCode !== 200) {
+                frameRes.resume();
+                if (!isRetry) {
+                    tryFetchOne('http://127.0.0.1:5520/liveview.jpg', true);
+                } else {
+                    res.status(502).send('Gateway Error');
+                }
+                return;
+            }
+
+            res.set('Content-Type', 'image/jpeg');
+            frameRes.pipe(res);
+            
+        }).on('error', (e) => {
+            if (!isRetry) {
+                tryFetchOne('http://127.0.0.1:5520/liveview.jpg', true);
+            } else {
+                console.error('[SNAPSHOT] Failed:', e.message);
+                res.status(500).send('Snapshot Failed');
+            }
+        });
+    };
+
+    tryFetchOne(LIVE_VIEW_URL);
+});
+
 
 // --- SHOOT HANDLER (FIRE & FORGET) ---
 app.post('/shoot', async (req, res) => {

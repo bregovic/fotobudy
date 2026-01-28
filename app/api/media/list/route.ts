@@ -1,11 +1,33 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { prisma } from '../../../../lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
+const IS_CLOUD = !!process.env.RAILWAY_ENVIRONMENT_NAME;
+
 export async function GET() {
     try {
+        // --- ☁️ CLOUD MODE (RAILWAY) ---
+        if (IS_CLOUD) {
+            const medias = await prisma.media.findMany({
+                orderBy: { createdAt: 'desc' },
+                take: 60,
+                where: {
+                    type: { in: ['PHOTO', 'VIDEO'] } // Filter if needed
+                }
+            });
+
+            return NextResponse.json(medias.map(m => ({
+                id: m.id,
+                // On Cloud, serve from DB to ensure persistence (ephemeral FS)
+                url: m.data ? `/api/media/image/${m.id}` : m.url,
+                createdAt: m.createdAt
+            })));
+        }
+
+        // --- 🏠 LOCAL MODE (OFFLINE) ---
         const publicDir = path.join(process.cwd(), 'public', 'photos');
         if (!fs.existsSync(publicDir)) return NextResponse.json([]);
 

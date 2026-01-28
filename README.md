@@ -1,45 +1,70 @@
-# FotoBuddy 📸
+# Blick & Cvak 📸
 
-Chytrá webová fotobudka postavená na **Next.js** s propojením na DSLR (Canon) a tiskárnu.
+Chytrá webová fotobudka postavená na **Next.js** s propojením na DSLR (Canon/Nikon) a tiskárnu.
 
 ## 🚀 Jak to funguje
 
-Tento systém se skládá ze dvou částí:
+Tento systém může běžet ve dvou režimech:
 
-1.  **Webová Aplikace (Cloud)**
-    *   Běží na Railway (nebo Vercel/VPS).
-    *   Poskytuje rozhraní pro Kiosk (display na akci) a Remote (ovládání mobilem).
-    *   Ukládá fotky a relace do databáze.
+### 🏠 Lokální Režim (Offline)
+- Běží **přímo na notebooku** u fotoaparátu.
+- **Bez databáze** – fotky se ukládají do složky `public/photos`.
+- Spuštění: `Blick_Cvak.bat` → automaticky nastartuje server, DigicamControl a Chrome v kiosk módu.
 
-2.  **Lokální Bridge (Notebook u foťáku)**
-    *   Skript ve složce `local-service/`.
-    *   Běží na notebooku připojeném k fotoaparátu.
-    *   Přijímá příkazy z webu a ovládá hardware (vyfocení, tisk).
+### ☁️ Cloud Režim (Railway)
+- Webová aplikace běží na **Railway** (nebo jiném hostingu).
+- Fotky se ukládají do **PostgreSQL databáze** (jako BLOB).
+- Lokální Bridge (`local-service/`) streamuje náhled a ovládá hardware.
 
 ## 🛠️ Instalace a Spuštění
 
-### 1. Webová Aplikace
+### Lokální Režim
 ```bash
+# 1. Nainstalovat závislosti
 npm install
+
+# 2. Spustit přes BAT soubor (doporučeno)
+Blick_Cvak.bat
+
+# Nebo ručně:
 npm run dev
-# Web běží na http://localhost:3000
+# Web běží na http://localhost:3000/kiosk
 ```
 
-### 2. Hardware Bridge
-Více informací viz [local-service/README.md](local-service/README.md).
-
-## 🌍 Nasazení (Railway)
-
-1. Propojte tento repozitář s Railway.
+### Cloud Režim (Railway)
+1. Propojte repozitář s Railway.
 2. Přidejte PostgreSQL databázi.
-3. Nastavte proměnné prostředí (ENV):
-   *   `DATABASE_URL`: Automaticky nastaveno Railway.
+3. Proměnná `DATABASE_URL` se nastaví automaticky.
+4. Na lokálním PC spusťte `START_BRIDGE.bat` pro propojení s kamerou.
 
 ## 📱 Použití
 
-1. Otevřete `/kiosk` na notebooku/tabletu u fotostěny.
-2. Hosté naskenují QR kód.
-3. Na mobilu se jim otevře `/remote` ovladač.
-4. Kliknou na "VYFOTIT" -> Kamera cvakne -> Fotka se ukáže na kiosku.
+1. Otevřete `/kiosk` na tabletu/notebooku u fotostěny.
+2. Klikněte na obrazovku nebo použijte tlačítko "VYFOTIT".
+3. Fotka se automaticky zpracuje (efekty, ořez) a zobrazí.
+4. Možnost tisku nebo odeslání emailem.
 
+## 📂 Struktura Projektu
+
+```
+/app
+  /kiosk      ← Hlavní UI fotokoutku
+  /gallery    ← Prohlížeč fotek
+  /video      ← Video vzkazy
+  /profile    ← Admin nastavení (SMTP, assets)
+  /api        ← Backend API routes
+
+/local-service  ← Bridge pro kameru a tiskárnu
+/scripts        ← Pomocné skripty
+/prisma         ← Schéma databáze
+```
+
+## ⚙️ Konfigurace
+
+Nastavení se ukládá do `settings.json`:
+- SMTP konfigurace pro emaily
+- Šablona emailu
+- Cesta k fotkám
+
+---
 Vyvinuto s ❤️ pro zábavnější akce.
