@@ -175,6 +175,96 @@ setTimeout(() => {
     }, 10000);
 }, 5000);
 
+// --- CLOUD STREAM UPLOAD LOOP ---
+// Upload live frames to Railway for remote viewers
+let cloudStreamActive = true;
+
+function startCloudStreamUpload() {
+    console.log('[CLOUD-STREAM] Startuji upload živého náhledu na Railway...');
+
+    const uploadFrame = () => {
+        if (!cloudStreamActive) return;
+
+        // Get frame from optimizer or DCC
+        http.get(LIVE_VIEW_URL, (imgRes) => {
+            if (imgRes.statusCode !== 200) {
+                imgRes.resume();
+                // Fallback to raw DCC
+                tryUploadFromDCC();
+                return;
+            }
+
+            const chunks = [];
+            imgRes.on('data', c => chunks.push(c));
+            imgRes.on('end', () => {
+                const buffer = Buffer.concat(chunks);
+                if (buffer.length > 1000) { // Valid image
+                    uploadToRailway(buffer);
+                }
+                setTimeout(uploadFrame, 200);
+            });
+        }).on('error', () => {
+            tryUploadFromDCC();
+        });
+    };
+
+    const tryUploadFromDCC = () => {
+        http.get('http://127.0.0.1:5520/liveview.jpg', (imgRes) => {
+            if (imgRes.statusCode !== 200) {
+                imgRes.resume();
+                setTimeout(uploadFrame, 1000);
+                return;
+            }
+
+            const chunks = [];
+            imgRes.on('data', c => chunks.push(c));
+            imgRes.on('end', () => {
+                const buffer = Buffer.concat(chunks);
+                if (buffer.length > 1000) {
+                    uploadToRailway(buffer);
+                }
+                setTimeout(uploadFrame, 200);
+            });
+        }).on('error', () => {
+            setTimeout(uploadFrame, 1000);
+        });
+    };
+
+    const uploadToRailway = (buffer) => {
+        const req = https.request({
+            hostname: 'cvak.up.railway.app',
+            port: 443,
+            path: '/api/stream/snapshot',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'image/jpeg',
+                'Content-Length': buffer.length
+            }
+        }, (res) => {
+            res.resume(); // Consume response
+        });
+
+        req.on('error', () => { }); // Silent fail
+        req.write(buffer);
+        req.end();
+    };
+
+    // Start after 5s delay (wait for DCC to be ready)
+    setTimeout(uploadFrame, 5000);
+}
+
+// Endpoint to control cloud stream
+app.post('/cloud-stream', (req, res) => {
+    const { enabled } = req.body;
+    cloudStreamActive = !!enabled;
+    res.json({ success: true, active: cloudStreamActive });
+});
+
+app.get('/cloud-stream-status', (req, res) => {
+    res.json({ active: cloudStreamActive });
+});
+
+
 // --- BACKGROUND PROCESSING LOOP ---
 // Checks for new photos and generates 'web_' versions for gallery
 function startBackgroundProcessing() {
@@ -281,7 +371,8 @@ app.listen(PORT, () => {
     console.log(`   -> Live View Stream: http://localhost:${PORT}/stream.mjpg`);
     console.log(`   -> Photos Dir: ${SAVE_DIR}`);
     startBackgroundProcessing();
-    startCloudSync();
+    startCloudStreamUpload();  // Upload live frames to Railway
+    startCloudSync();          // Sync photos to Railway DB
 });
 
 // --- CLOUD SYNC INTEGRATION ---
