@@ -414,49 +414,20 @@ export default function KioskPage() {
     }, [status]);
     const finalStreamUrl = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' ? `/api/stream/snapshot?t=${cloudTick}` : getDisplayUrl();
 
-    // Streaming Loop
+    // Stream Status (Bridge now handles cloud upload)
     useEffect(() => {
         const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-        // GUARD: Never try to upload stream if we are not the local booth
-        if (!isLocal) {
+        if (isLocal && activePort) {
+            setStreamStatus('live');
+            addLog('Stream aktivní (Bridge uploaduje na cloud)');
+        } else if (!isLocal) {
+            // On cloud, we just receive - no status tracking needed
+            setStreamStatus('cloud');
+        } else {
             setStreamStatus('offline');
-            return;
         }
-
-        if (!cloudStreamEnabled || !activePort) { setStreamStatus('offline'); return; }
-
-        let mounted = true; setStreamStatus('live'); addLog('Startuji Stream...');
-        const loop = async () => {
-            if (!mounted) return;
-            // Loop continues...
-
-            try {
-                if (!activePort) throw new Error("No Port");
-
-                const path = (activePort === 5521 || activePort === 5514) ? '/live' : '/liveview.jpg';
-                const localUrl = `http://${cameraIp}:${activePort}${path}`;
-
-                // Fetch local stream (with CORS if Bridge, or no-cors if raw - but raw needs proxy for blob)
-                // Note: fetch(url) here expects CORS if we want to read .blob()
-                const imgRes = await fetch(localUrl);
-                const blob = await imgRes.blob();
-                await fetch('https://cvak.up.railway.app/api/stream/snapshot', { method: 'POST', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
-                setTimeout(loop, 200);
-            } catch (e: any) {
-                if (mounted) {
-                    // Suppress common fetch errors to reduce noise
-                    if (e.message !== 'Failed to fetch') {
-                        console.error("Stream Loop Error:", e);
-                        if (Math.random() > 0.9) addLog(`Chyba streamu: ${e.message}`);
-                    }
-                    setStreamStatus('error');
-                    setTimeout(loop, 1000);
-                }
-            }
-        };
-        loop(); return () => { mounted = false; addLog('Stop Stream.'); };
-    }, [cloudStreamEnabled, activePort, cameraIp, status]);
+    }, [activePort]);
 
     // Data Poll
     const lastProcessedIdRef = useRef<string | null>(null);
