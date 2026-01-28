@@ -201,7 +201,7 @@ export default function KioskPage() {
         isBW: false,
         selectedSticker: null as string | null,
         email: '',
-        printWidth: 150, // mm
+        printWidth: 148, // mm (Canon Postcard standard)
         printHeight: 100 // mm
     });
 

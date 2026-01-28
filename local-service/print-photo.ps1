@@ -25,10 +25,21 @@ $pd.add_PrintPage({
     # However, if we want to force "Fill", we should use PageBounds (Physical Size) 
     # dependent on OriginAtMargins = false.
     
-    $rect = $e.PageBounds
+    # OVERSCAN / BLEED CORRECTION
+    # Expand the rectangle by ~2% to ensure no white borders appear due to driver margins.
+    $bleed = 0.02
     
-    # Draw Image Stretched to Fill Page
-    # Since we pre-cropped in App, stretching ensures it fits exactly.
+    $w = $e.PageBounds.Width
+    $h = $e.PageBounds.Height
+    
+    $newW = $w * (1 + $bleed * 2)
+    $newH = $h * (1 + $bleed * 2)
+    $x = -($w * $bleed)
+    $y = -($h * $bleed)
+    
+    $rect = New-Object System.Drawing.RectangleF($x, $y, $newW, $newH)
+    
+    # Draw Image Stretched to Fill Page (with Bleed)
     $g.DrawImage($img, $rect)
     
     $img.Dispose()
