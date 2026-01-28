@@ -116,7 +116,7 @@ app.get('/liveview.jpg', (req, res) => {
 
             res.set('Content-Type', 'image/jpeg');
             frameRes.pipe(res);
-            
+
         }).on('error', (e) => {
             if (!isRetry) {
                 tryFetchOne('http://127.0.0.1:5520/liveview.jpg', true);
@@ -281,4 +281,49 @@ app.listen(PORT, () => {
     console.log(`   -> Live View Stream: http://localhost:${PORT}/stream.mjpg`);
     console.log(`   -> Photos Dir: ${SAVE_DIR}`);
     startBackgroundProcessing();
+    startCloudSync();
 });
+
+// --- CLOUD SYNC INTEGRATION ---
+const cloudSync = require('./cloud-sync');
+
+function startCloudSync() {
+    console.log('[CLOUD-SYNC] Spouštím automatickou synchronizaci...');
+
+    // První sync po 10s (čekáme na startup)
+    setTimeout(() => {
+        runSyncWithLogging();
+    }, 10000);
+
+    // Pak každých 30s
+    setInterval(() => {
+        runSyncWithLogging();
+    }, 30000);
+}
+
+async function runSyncWithLogging() {
+    try {
+        const result = await cloudSync.runSyncCycle();
+        if (result.created || result.uploaded) {
+            console.log(`[CLOUD-SYNC] Hotovo: ${result.created} nových, ${result.uploaded} nahráno`);
+        }
+    } catch (e) {
+        console.error('[CLOUD-SYNC] Chyba:', e.message);
+    }
+}
+
+// Sync Status Endpoint
+app.get('/sync-status', (req, res) => {
+    res.json(cloudSync.getSyncStatus());
+});
+
+// Manual Sync Trigger
+app.post('/sync-now', async (req, res) => {
+    try {
+        const result = await cloudSync.runSyncCycle();
+        res.json({ success: true, ...result });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
