@@ -72,28 +72,17 @@ console.log('');
 console.log('─────────────────────────────────────────────────────────────');
 console.log('');
 
-// Najít next binary
-const nextBin = path.join(process.cwd(), 'node_modules', '.bin', 'next.cmd');
-const nextModule = path.join(process.cwd(), 'node_modules', 'next', 'dist', 'bin', 'next');
+// Spustit Next.js pomocí exec (lépe zvládá .cmd na Windows)
+const { execSync, exec: execCallback } = require('child_process');
 
-let server;
-if (fs.existsSync(nextBin)) {
-    // Windows: použít .cmd script přímo
-    server = spawn(nextBin, ['dev', '-p', LOCAL_PORT.toString()], {
-        stdio: 'inherit',
-        cwd: process.cwd(),
-        windowsHide: true
-    });
-} else {
-    // Fallback: node + next module
-    server = spawn('node', [nextModule, 'dev', '-p', LOCAL_PORT.toString()], {
-        stdio: 'inherit',
-        cwd: process.cwd(),
-        windowsHide: true
-    });
-}
+// Spustit Next.js server
+const serverProcess = require('child_process').spawn('cmd.exe', ['/c', 'npx next dev -p ' + LOCAL_PORT], {
+    stdio: 'inherit',
+    cwd: process.cwd(),
+    windowsHide: false  // Musí být false aby fungovalo stdio: inherit
+});
 
-server.on('error', (err) => {
+serverProcess.on('error', (err) => {
     console.error('❌ Server error:', err.message);
 });
 
