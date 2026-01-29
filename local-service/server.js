@@ -27,12 +27,13 @@ let isCapturing = false;
 if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true });
 app.use('/photos', express.static(SAVE_DIR));
 
-// Spuštění Stream Optimizeru (PowerShell proxy)
+// Spuštění Stream Optimizeru (PowerShell proxy) - SKRYTĚ
 console.log('[INIT] Spouštím Stream Optimizer...');
 const optimizer = spawn('powershell', [
+    '-WindowStyle', 'Hidden',
     '-ExecutionPolicy', 'Bypass',
     '-File', path.join(__dirname, 'optimize-stream.ps1')
-]);
+], { windowsHide: true });
 optimizer.on('error', (err) => console.error('[OPTIMIZER] Failed to start:', err));
 // Ignorujeme běžné logy, vypisujeme jen chyby
 optimizer.stderr.on('data', (d) => {
