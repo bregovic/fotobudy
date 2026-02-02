@@ -159,6 +159,29 @@ const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail
 export default function KioskPage() {
     const [status, setStatus] = useState<'idle' | 'countdown' | 'processing' | 'review'>('idle');
     // const [countdown, setCountdown] = useState(0); // REMOVED LEGACY LOCAL STATE
+    const lastBeepRef = useRef<number | null>(null);
+
+    const playBeep = (type: 'tick' | 'final') => {
+        try {
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            if (type === 'final') {
+                osc.frequency.setValueAtTime(880, ctx.currentTime); // High pitch (A5)
+                gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.5);
+            } else {
+                osc.frequency.setValueAtTime(600, ctx.currentTime); // Mid pitch
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.1);
+            }
+        } catch (e) { /* Audio context blocked or error */ }
+    };
     const [lastPhoto, setLastPhoto] = useState<string | null>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [showGallery, setShowGallery] = useState(false);
@@ -492,7 +515,15 @@ export default function KioskPage() {
                         // Only force status if not already processing
                         if (status !== 'processing') setStatus('countdown');
                         setCountdownValue(remaining);
+
+                        // Audio Feedback
+                        if (remaining !== lastBeepRef.current) {
+                            if (remaining === 3 || remaining === 2) playBeep('tick');
+                            if (remaining === 1) playBeep('final');
+                            lastBeepRef.current = remaining;
+                        }
                     } else {
+                        lastBeepRef.current = null;
                         setCountdownValue(null);
                     }
                 } else {
@@ -643,7 +674,8 @@ export default function KioskPage() {
             canvas.toBlob(async (blob) => {
                 if (!blob) throw new Error("Canvas Blob failed");
                 const previewUrl = URL.createObjectURL(blob);
-                setLastPhoto(previewUrl); // Update Viewer with Processed Version
+                setLastPhoto(previewUrl);
+                setStatus('review'); // Show photo immediately
 
                 // Upload
                 const formData = new FormData();
@@ -655,13 +687,19 @@ export default function KioskPage() {
 
                 if (uploadData.success && uploadData.url) {
                     addLog('✅ Uloženo & Upraveno');
-                    setLastPhoto(uploadData.url); // Switch to remote URL so Action Buttons work
+                    setLastPhoto(uploadData.url);
                 } else {
                     addLog('❌ Chyba uploadu');
                 }
                 setIsUploading(false);
 
-                // Refresh gallery
+                // Auto-return to Live View after 2 seconds
+                setTimeout(() => {
+                    setLastPhoto(null);
+                    setStatus('idle');
+                }, 2000);
+
+                // Refresh gallery data silently (no open)
                 openGallery().then(() => setShowGallery(false));
 
             }, 'image/jpeg', 0.90);
