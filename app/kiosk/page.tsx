@@ -136,7 +136,7 @@ const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail
             {/* Grid */}
             <div className="flex-1 overflow-y-auto p-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {photos.map((p: any, idx: number) => (
-                    <div key={p.id} className={`relative aspect-[3/2] bg-slate-900 rounded-xl overflow-hidden group transition-all duration-200 border border-slate-800 hover:shadow-xl hover:scale-[1.02] ${selectedIds.includes(p.id) ? 'ring-4 ring-indigo-500 scale-[1.02]' : ''}`}>
+                    <div key={p.id} className={`relative w-full pb-[66.66%] bg-slate-900 rounded-xl overflow-hidden group transition-all duration-200 border border-slate-800 hover:shadow-xl hover:scale-[1.02] ${selectedIds.includes(p.id) ? 'ring-4 ring-indigo-500 scale-[1.02]' : ''}`}>
                         {/* Image - absolute to fill the aspect-ratio container */}
                         <img src={p.url} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
 
