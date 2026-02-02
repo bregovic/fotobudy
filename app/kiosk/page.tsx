@@ -158,7 +158,7 @@ const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail
 
 export default function KioskPage() {
     const [status, setStatus] = useState<'idle' | 'countdown' | 'processing' | 'review'>('idle');
-    const [countdown, setCountdown] = useState(0);
+    // const [countdown, setCountdown] = useState(0); // REMOVED LEGACY LOCAL STATE
     const [lastPhoto, setLastPhoto] = useState<string | null>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [showGallery, setShowGallery] = useState(false);
@@ -679,37 +679,33 @@ export default function KioskPage() {
         const img = e.currentTarget; const canvas = document.createElement('canvas'); canvas.width = img.naturalWidth; canvas.height = img.naturalHeight; const ctx = canvas.getContext('2d'); if (!ctx) return; ctx.drawImage(img, 0, 0); const rect = img.getBoundingClientRect(); const x = (e.clientX - rect.left) * (img.naturalWidth / rect.width); const y = (e.clientY - rect.top) * (img.naturalHeight / rect.height); const p = ctx.getImageData(x, y, 1, 1).data;
         const hex = "#" + ((1 << 24) + (p[0] << 16) + (p[1] << 8) + p[2]).toString(16).slice(1).toUpperCase(); setSessionSettings({ ...sessionSettings, chromaKeyColor: hex }); setIsPickingColor(false); showToast(`Barva: ${hex}`);
     };
-    const startCountdown = () => { if (processingRef.current) return; setCountdown(3); setStatus('countdown'); processingRef.current = true; let count = 3; const timer = setInterval(() => { count--; if (count > 0) setCountdown(count); else { clearInterval(timer); takePhoto(); } }, 1000); };
+    // Unified Countdown: Trigger server with delay
+    const startCountdown = () => {
+        if (processingRef.current) return;
+        takePhoto(3000);
+    };
 
-
-    const takePhoto = async () => {
-        setCountdown(0);
-        setStatus('processing');
-
-        // Timeout check
-        setTimeout(() => {
-            if (processingRef.current) {
-                processingRef.current = false;
-                setStatus('idle');
-                showToast("Timeout fotky.");
-            }
-        }, 20000);
+    const takePhoto = async (delay = 0) => {
+        // We do NOT set status here. We rely on polling /status from Bridge.
+        // This prevents conflicting states (local vs server).
 
         try {
-            // Priority: 1. Auto-detected, 2. Manual Setting, 3. Default
-            const port = autoCmdPort || sessionSettings.commandPort || DEFAULT_CMD_PORT;
+            // Use Bridge Server (Port 5555) for synchronized shooting
+            // Even if camera is on another port, Bridge handles it.
+            const url = `http://${cameraIp}:5555/shoot`;
 
-            // DigicamControl API pro vyfocení
-            const url = `http://${cameraIp}:${port}/?cmd=Capture`;
+            console.log(`📸 Sending Trigger to Bridge: ${url} (Delay: ${delay}ms)`);
 
-            console.log(`📸 Odesílám příkaz na kameru: ${url} (Auto: ${autoCmdPort})`);
-            await fetch(url, { mode: 'no-cors' });
+            // Send trigger with optional delay
+            fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ delay })
+            }).catch(e => console.error("Trigger Failed", e));
 
         } catch (e) {
-            console.error("Chyba při focení:", e);
-            showToast('Chyba kamery');
-            processingRef.current = false;
-            setStatus('idle');
+            console.error("Camera Error:", e);
+            showToast('Chyba komunikace');
         }
     };
 
@@ -804,7 +800,7 @@ export default function KioskPage() {
                         : <div className="w-full h-full relative flex items-center justify-center"><LiveView streamUrl={finalStreamUrl} isBW={sessionSettings.isBW} isScanning={isScanning} error={isLocal && !isScanning && !activePort} className="w-full h-full object-contain" onRestart={restartLiveView} onStreamError={() => { console.warn("Stream drop, retrying..."); setStreamToken(Date.now()); }} printWidth={sessionSettings.printWidth} printHeight={sessionSettings.printHeight} /></div>}
             </div>
 
-            {status === 'countdown' && <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-50"><div className="text-[15rem] font-black text-white drop-shadow-2xl animate-bounce">{countdown}</div></div>}
+            {/* Legacy Overlay Removed */}
 
             {/* SETTINGS MODAL */}
             {showSettings && (
