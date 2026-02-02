@@ -27,23 +27,43 @@ let isCapturing = false;
 if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true });
 app.use('/photos', express.static(SAVE_DIR));
 
-// Spuštění Stream Optimizeru (PowerShell proxy) - SKRYTĚ
-console.log('[INIT] Spouštím Stream Optimizer...');
-const optimizer = spawn('powershell', [
-    '-WindowStyle', 'Hidden',
-    '-ExecutionPolicy', 'Bypass',
-    '-File', path.join(__dirname, 'optimize-stream.ps1')
-], { windowsHide: true });
-optimizer.on('error', (err) => console.error('[OPTIMIZER] Failed to start:', err));
-// Ignorujeme běžné logy, vypisujeme jen chyby
-optimizer.stderr.on('data', (d) => {
-    const msg = d.toString();
-    if (msg.includes('HttpListenerException')) console.log('[OPTIMIZER] Port 5566 busy (OK if already running)');
-    else console.error(`[OPT-ERR]: ${msg}`);
-});
+// --- SHARED FRAME BUFFER STRATEGY ---
+// Instead of every client hitting DCC, we poll once and serve many
+let latestFrame = null;
+let lastFrameTime = 0;
+
+function startCameraPolling() {
+    console.log('[POLLER] Starting centralized camera polling...');
+
+    const poll = () => {
+        // Fetch from DCC Raw (most reliable)
+        http.get('http://127.0.0.1:5520/liveview.jpg', (res) => {
+            if (res.statusCode !== 200) {
+                res.resume();
+                setTimeout(poll, 1000); // Retry slow if error
+                return;
+            }
+
+            const chunks = [];
+            res.on('data', c => chunks.push(c));
+            res.on('end', () => {
+                const buffer = Buffer.concat(chunks);
+                if (buffer.length > 2000) { // Ignore partial/invalid frames
+                    latestFrame = buffer;
+                    lastFrameTime = Date.now();
+                }
+                setTimeout(poll, 50); // ~20 FPS target
+            });
+        }).on('error', (e) => {
+            // console.error('[POLLER] Error:', e.message); // Too noisy
+            setTimeout(poll, 1000);
+        });
+    };
+    poll();
+}
 
 // --- LOCAL MJPEG STREAM ---
-// Endpoint pro lokální klienty (Next.js proxy nebo přímo browser)
+// Serves from Memory Buffer - Zero load on camera
 app.get('/stream.mjpg', (req, res) => {
     res.writeHead(200, {
         'Content-Type': 'multipart/x-mixed-replace; boundary=--myboundary',
@@ -52,83 +72,26 @@ app.get('/stream.mjpg', (req, res) => {
         'Pragma': 'no-cache'
     });
 
-    let active = true;
+    const streamInterval = setInterval(() => {
+        if (latestFrame) {
+            res.write(`--myboundary\nContent-Type: image/jpeg\nContent-Length: ${latestFrame.length}\n\n`);
+            res.write(latestFrame);
+            res.write('\n');
+        }
+    }, 100); // 10 FPS for clients is enough
 
-    req.on('close', () => { active = false; });
-    req.on('end', () => { active = false; });
-
-    const sendFrame = () => {
-        if (!active) return;
-
-        // 1. Try Optimizer First (5566), Fallback to Raw DCC (5520)
-        const tryFetch = (url, isRetry = false) => {
-            http.get(url, (frameRes) => {
-                if (frameRes.statusCode !== 200) {
-                    if (!isRetry) {
-                        // Fallback to Raw
-                        tryFetch('http://127.0.0.1:5520/liveview.jpg', true);
-                    } else {
-                        setTimeout(sendFrame, 500);
-                    }
-                    frameRes.resume();
-                    return;
-                }
-
-                const chunks = [];
-                frameRes.on('data', c => chunks.push(c));
-                frameRes.on('end', () => {
-                    if (!active) return;
-                    const buffer = Buffer.concat(chunks);
-                    res.write(`--myboundary\nContent-Type: image/jpeg\nContent-Length: ${buffer.length}\n\n`);
-                    res.write(buffer);
-                    res.write('\n');
-                    setTimeout(sendFrame, 66);
-                });
-            }).on('error', (e) => {
-                if (!isRetry) {
-                    // Fallback to Raw
-                    tryFetch('http://127.0.0.1:5520/liveview.jpg', true);
-                } else {
-                    setTimeout(sendFrame, 1000);
-                }
-            });
-        };
-
-        tryFetch(LIVE_VIEW_URL);
-    };
-
-    sendFrame();
+    req.on('close', () => clearInterval(streamInterval));
+    req.on('end', () => clearInterval(streamInterval));
 });
 
-// --- SNAPSHOT ENDPOINT (FOR CLOUD UPLOAD) ---
-// Returns a single JPEG for the frontend loop to upload
+// --- SNAPSHOT ENDPOINT ---
 app.get('/liveview.jpg', (req, res) => {
-    const tryFetchOne = (url, isRetry = false) => {
-        http.get(url, (frameRes) => {
-            if (frameRes.statusCode !== 200) {
-                frameRes.resume();
-                if (!isRetry) {
-                    tryFetchOne('http://127.0.0.1:5520/liveview.jpg', true);
-                } else {
-                    res.status(502).send('Gateway Error');
-                }
-                return;
-            }
-
-            res.set('Content-Type', 'image/jpeg');
-            frameRes.pipe(res);
-
-        }).on('error', (e) => {
-            if (!isRetry) {
-                tryFetchOne('http://127.0.0.1:5520/liveview.jpg', true);
-            } else {
-                console.error('[SNAPSHOT] Failed:', e.message);
-                res.status(500).send('Snapshot Failed');
-            }
-        });
-    };
-
-    tryFetchOne(LIVE_VIEW_URL);
+    if (latestFrame) {
+        res.set('Content-Type', 'image/jpeg');
+        res.send(latestFrame);
+    } else {
+        res.status(503).send('Initializing...');
+    }
 });
 
 
@@ -177,81 +140,40 @@ setTimeout(() => {
 }, 5000);
 
 // --- CLOUD STREAM UPLOAD LOOP ---
-// Upload live frames to Railway for remote viewers
+// Reads from SHAARED BUFFER
 let cloudStreamActive = true;
 
 function startCloudStreamUpload() {
-    console.log('[CLOUD-STREAM] Startuji upload živého náhledu na Railway...');
+    console.log('[CLOUD-STREAM] Startuji upload ze sdíleného bufferu...');
 
-    const uploadFrame = () => {
+    const uploadLoop = () => {
         if (!cloudStreamActive) return;
 
-        // Get frame from optimizer or DCC
-        http.get(LIVE_VIEW_URL, (imgRes) => {
-            if (imgRes.statusCode !== 200) {
-                imgRes.resume();
-                // Fallback to raw DCC
-                tryUploadFromDCC();
-                return;
-            }
-
-            const chunks = [];
-            imgRes.on('data', c => chunks.push(c));
-            imgRes.on('end', () => {
-                const buffer = Buffer.concat(chunks);
-                if (buffer.length > 1000) { // Valid image
-                    uploadToRailway(buffer);
+        if (latestFrame && (Date.now() - lastFrameTime < 2000)) {
+            // Upload only if frame is fresh (< 2s old)
+            const req = https.request({
+                hostname: 'cvak.up.railway.app',
+                port: 443,
+                path: '/api/stream/snapshot',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'image/jpeg',
+                    'Content-Length': latestFrame.length
                 }
-                setTimeout(uploadFrame, 200);
-            });
-        }).on('error', () => {
-            tryUploadFromDCC();
-        });
+            }, (res) => { res.resume(); });
+
+            req.on('error', () => { });
+            req.write(latestFrame);
+            req.end();
+        }
+
+        setTimeout(uploadLoop, 200); // 5 FPS upload to cloud
     };
 
-    const tryUploadFromDCC = () => {
-        http.get('http://127.0.0.1:5520/liveview.jpg', (imgRes) => {
-            if (imgRes.statusCode !== 200) {
-                imgRes.resume();
-                setTimeout(uploadFrame, 1000);
-                return;
-            }
-
-            const chunks = [];
-            imgRes.on('data', c => chunks.push(c));
-            imgRes.on('end', () => {
-                const buffer = Buffer.concat(chunks);
-                if (buffer.length > 1000) {
-                    uploadToRailway(buffer);
-                }
-                setTimeout(uploadFrame, 200);
-            });
-        }).on('error', () => {
-            setTimeout(uploadFrame, 1000);
-        });
-    };
-
-    const uploadToRailway = (buffer) => {
-        const req = https.request({
-            hostname: 'cvak.up.railway.app',
-            port: 443,
-            path: '/api/stream/snapshot',
-            method: 'POST',
-            headers: {
-                'Content-Type': 'image/jpeg',
-                'Content-Length': buffer.length
-            }
-        }, (res) => {
-            res.resume(); // Consume response
-        });
-
-        req.on('error', () => { }); // Silent fail
-        req.write(buffer);
-        req.end();
-    };
-
-    // Start after 5s delay (wait for DCC to be ready)
-    setTimeout(uploadFrame, 5000);
+    // Start polling DCC first
+    startCameraPolling();
+    // Start upload loop
+    setTimeout(uploadLoop, 2000);
 }
 
 // Endpoint to control cloud stream
