@@ -57,23 +57,7 @@ const LiveView = memo(({ streamUrl, isBW, isScanning, error, className, onRestar
                         alt="Live View"
                     />
                     {/* Print Guide Overlay */}
-                    {printWidth && printHeight && (
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div
-                                className="border-2 border-green-500/50 shadow-[0_0_200px_rgba(0,0,0,0.5)_inset] w-full h-full"
-                                style={{
-                                    aspectRatio: `${printWidth}/${printHeight}`,
-                                    // Make sure it doesn't overflow container
-                                    maxHeight: '100%',
-                                    maxWidth: '100%'
-                                }}
-                            >
-                                <div className="absolute top-2 left-2 text-[10px] text-green-500 font-mono bg-black/50 px-1 rounded">
-                                    TISK {printWidth}x{printHeight}
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                    {/* Print Guide Removed */}
                 </>
             )}
         </div>
