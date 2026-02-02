@@ -20,35 +20,26 @@ function RemoteContent() {
         setCount(3);
         setError('');
 
-        // Simulate countdown logic locally for UX
+        // 1. Send Trigger IMMEDIATELY with delay
+        try {
+            fetch('/api/trigger', {
+                method: 'POST',
+                body: JSON.stringify({ sessionId, delay: 3500 }) // 3.5s delay on server
+            }).catch(e => setError('Chyba odeslání'));
+        } catch (e) { }
+
+        // 2. Start Local UI Countdown (optimistically synced)
         const timer = setInterval(() => {
             setCount((prev) => {
                 if (prev <= 1) {
                     clearInterval(timer);
-                    return 0; // Trigger action
+                    // Keep "0" (Camera emoji) visible for a bit
+                    setTimeout(() => setCounting(false), 2000);
+                    return 0;
                 }
                 return prev - 1;
             });
         }, 1000);
-
-        // Wait for countdown to finish
-        setTimeout(async () => {
-            setCounting(false); // Reset UI
-            // Send Trigger
-            try {
-                const res = await fetch('/api/trigger', {
-                    method: 'POST',
-                    body: JSON.stringify({ sessionId })
-                });
-                const data = await res.json();
-                if (!data.success) {
-                    setError('Nepodařilo se odeslat příkaz.');
-                }
-            } catch (e) {
-                console.error(e);
-                setError('Chyba připojení.');
-            }
-        }, 3500); // 3s countdown + buffer
     };
 
     return (

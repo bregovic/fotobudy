@@ -454,6 +454,7 @@ export default function KioskPage() {
 
                 // New photo detection
                 if (data.latest && data.latest.id) {
+
                     // FIRST RUN CHECK: Don't process what was already there on reload
                     if (isFirstPoll.current) {
                         lastProcessedIdRef.current = data.latest.id;
@@ -463,12 +464,11 @@ export default function KioskPage() {
                     }
 
                     if (data.latest.id !== lastProcessedIdRef.current) {
-                        // IGNORE self-generated web photos to prevent loops
+                        // IGNORE self-generated web photos or temporary files
                         if (data.latest.url.includes('/photos/web_') || data.latest.url.includes('edited_') || data.latest.url.includes('print_')) {
-                            // Only log once or just ignore silently to avoid clutter
+                            // Mark as seen so we don't re-check constanty
                             if (lastProcessedIdRef.current !== data.latest.id) {
-                                // console.log("Ignoring web/edited photo:", data.latest.id);
-                                lastProcessedIdRef.current = data.latest.id; // Mark as seen so we don't re-check constanty
+                                lastProcessedIdRef.current = data.latest.id;
                             }
                             return;
                         }
@@ -477,7 +477,6 @@ export default function KioskPage() {
                         lastProcessedIdRef.current = data.latest.id; // Mark as seen immediately
 
                         // 2. If it's a new ORIGINAL photo, process it (unless we are already reviewing one).
-                        // We MUST allow 'processing' state because that's where we are after shooting!
                         if (status === 'idle' || status === 'countdown' || status === 'processing') {
                             console.log("⚡ Auto-processing new photo...");
                             processNewPhoto(data.latest.url);
@@ -490,6 +489,37 @@ export default function KioskPage() {
         }, 1000);
         return () => clearInterval(interval);
     }, [status, sessionSettings]);
+
+    // --- COUNTDOWN SYNC LOGIC ---
+    const [countdownValue, setCountdownValue] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (!activePort || status === 'review') return;
+
+        const interval = setInterval(async () => {
+            // Only poll status if we are local (connected to Bridge)
+            try {
+                const res = await fetch(`http://${cameraIp}:5555/status`);
+                const data = await res.json();
+
+                if (data.countdownTarget > 0) {
+                    const remaining = Math.ceil((data.countdownTarget - data.now) / 1000);
+                    if (remaining > 0) {
+                        // Only force status if not already processing
+                        if (status !== 'processing') setStatus('countdown');
+                        setCountdownValue(remaining);
+                    } else {
+                        setCountdownValue(null);
+                    }
+                } else {
+                    setCountdownValue(null);
+                    // Reset only if we were previously counting down
+                    if (status === 'countdown') setStatus('idle');
+                }
+            } catch (e) { }
+        }, 200);
+        return () => clearInterval(interval);
+    }, [activePort, cameraIp, status]);
 
     // Process Photo with Effects
     const processNewPhoto = async (originalUrl: string) => {
@@ -908,6 +938,15 @@ export default function KioskPage() {
             </div>
 
             {toastMessage && <div className="absolute top-10 left-1/2 -translate-x-1/2 z-[60] bg-indigo-600/90 backdrop-blur shadow-2xl text-white px-8 py-4 rounded-2xl font-bold flex items-center gap-2 animate-in slide-in-from-top-4 fade-in"><div className="w-2 h-2 bg-white rounded-full animate-ping"></div> {toastMessage}</div>}
+
+            {/* COUNTDOWN OVERLAY */}
+            {countdownValue !== null && (
+                <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/30 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="text-[20rem] font-black text-white drop-shadow-[0_0_50px_rgba(0,0,0,0.8)] animate-bounce leading-none">
+                        {countdownValue}
+                    </div>
+                </div>
+            )}
 
             {/* NEW GALLERY MODAL */}
             {showGallery && (

@@ -22,8 +22,6 @@ const LOCAL_ONLY = true;
 const CLOUD_API_URL = 'https://cvak.up.railway.app';
 const CLOUD_UPLOAD_URL = `${CLOUD_API_URL}/api/media/upload`;
 
-let isCapturing = false;
-
 if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true });
 app.use('/photos', express.static(SAVE_DIR));
 
@@ -95,15 +93,51 @@ app.get('/liveview.jpg', (req, res) => {
 });
 
 
-// --- SHOOT HANDLER (FIRE & FORGET) ---
+// --- SERVER STATE ---
+let countdownTarget = 0; // Timestamp when photo will be taken
+let isCapturing = false;
+
+// --- STATUS ENDPOINT (POLLING) ---
+app.get('/status', (req, res) => {
+    res.json({
+        isCapturing,
+        countdownTarget, // If > Date.now(), we are counting down
+        now: Date.now()  // Server time for sync
+    });
+});
+
+// --- SHOOT HANDLER (SYNC COUNTDOWN) ---
 app.post('/shoot', async (req, res) => {
     if (isCapturing) return res.status(429).json({ success: false, error: 'Camera busy' });
 
-    console.log('[BRIDGE] Capture requested...');
+    const delay = parseInt(req.body.delay || '0');
+
+    // If delay is requested, start countdown
+    if (delay > 0) {
+        console.log(`[BRIDGE] Starting countdown: ${delay}ms`);
+        countdownTarget = Date.now() + delay;
+        isCapturing = true; // Lock immediately
+
+        // Wait for countdown
+        setTimeout(() => {
+            performCapture();
+        }, delay);
+
+        return res.json({ success: true, message: 'Countdown started', target: countdownTarget });
+    }
+
+    // No delay - immediate capture
+    performCapture();
+    res.json({ success: true, message: 'Triggered' });
+});
+
+function performCapture() {
+    console.log('[BRIDGE] Capture NOW!');
+    countdownTarget = 0; // Reset countdown
     isCapturing = true;
 
     try {
-        // Trigger Camera via DCC - Fire and forget mostly
+        // Trigger Camera via DCC
         http.get(DCC_API_URL, (dccRes) => {
             if (dccRes.statusCode < 200 || dccRes.statusCode > 299) {
                 console.error(`[BRIDGE] DCC Error ${dccRes.statusCode}`);
@@ -111,18 +145,14 @@ app.post('/shoot', async (req, res) => {
             dccRes.resume();
         }).on('error', (e) => console.error('[BRIDGE] DCC Connection Failed', e));
 
-        // Return SUCCESS immediately to the UI
-        res.json({ success: true, message: 'Triggered' });
-
-        // Reset lock quickly
-        setTimeout(() => { isCapturing = false; }, 2000);
+        // Reset lock after capture
+        setTimeout(() => { isCapturing = false; }, 2500);
 
     } catch (e) {
         console.error(`[ERROR] ${e.message}`);
-        res.status(500).json({ success: false, error: e.message });
         isCapturing = false;
     }
-});
+}
 
 // STARTUP: FORCE LIVE VIEW ON
 setTimeout(() => {
