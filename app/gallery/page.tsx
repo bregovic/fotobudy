@@ -81,9 +81,14 @@ export default function GalleryPage() {
             return;
         }
 
-        // Pokud nemáme SMTP konfiguraci (jsme na webu/ mobilu), pošleme příkaz do kiosku
-        if (!smtpConfig) {
-            showToast('Odesílám požadavek do kiosku... 📨');
+        // Detekce prostředí: Jsme na Localhostu?
+        const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+        // Pokud nejsme na localhostu (jsme na cloudu) NEBO nemáme config => pošleme příkaz do kiosku
+        // To plní požadavek "z webu poslat do lokální aplikace"
+        if (!isLocal || !smtpConfig) {
+            showToast(isLocal ? 'Chybí SMTP config, zkouším Kiosk...' : 'Odesílám požadavek domů... 🏠');
+
             try {
                 const filename = selectedPhoto?.split('/').pop();
                 await fetch('/api/command', {
@@ -122,11 +127,38 @@ export default function GalleryPage() {
             const data = await res.json();
 
             if (data.success) showToast('Email odeslán! ✅');
-            else showToast('Chyba odesílání ❌');
+            else {
+                // Fallback: Pokud selže přímé odeslání (např. chyba SMTP), zkusíme to přes Command
+                console.warn("Direct email failed, trying command fallback...");
+                throw new Error("Direct send failed");
+            }
 
             setShowEmailModal(false);
             setEmailInput('');
-        } catch (e) { showToast('Chyba komunikace ❌'); }
+        } catch (e) {
+            // FALLBACK: Zkusit poslat příkaz
+            try {
+                showToast('Chyba. Zkouším poslat přes Kiosk... 🔄');
+                const filename = selectedPhoto?.split('/').pop();
+                await fetch('/api/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cmd: 'SEND_EMAIL',
+                        params: {
+                            email: emailInput,
+                            filename: filename,
+                            photoUrl: selectedPhoto
+                        }
+                    })
+                });
+                showToast('Odesláno do fronty Kiosku! ✅');
+                setShowEmailModal(false);
+                setEmailInput('');
+            } catch (errFallback) {
+                showToast('Nepodařilo se odeslat ani do fronty ❌');
+            }
+        }
     };
 
     return (
