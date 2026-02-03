@@ -9,40 +9,54 @@ const IS_CLOUD = !!process.env.RAILWAY_ENVIRONMENT_NAME;
 
 export async function GET() {
     try {
+        // 1. Get Active Event
+        const activeEvent = await prisma.event.findFirst({ where: { isActive: true } });
+
         // --- ☁️ CLOUD MODE (RAILWAY) ---
         if (IS_CLOUD) {
+            // Filter by Event ID if active, otherwise show all/none (or maybe default is show all?)
+            // User requirement: "V režimu focení bude umožněno zobrazovat vyfocené fotky z přiřazeného projektu"
+            // So if event is active, show ONLY that event. If no event, show what? maybe everything or nothing.
+            // Let's filter by event if exists.
+
+            const whereClause = activeEvent ? { eventId: activeEvent.id } : {};
+
             const medias = await prisma.media.findMany({
                 orderBy: { createdAt: 'desc' },
                 take: 60,
                 where: {
-                    type: { in: ['PHOTO', 'VIDEO'] } // Filter if needed
+                    ...whereClause,
+                    type: { in: ['PHOTO', 'VIDEO'] }
                 }
             });
 
             return NextResponse.json(medias.map(m => ({
                 id: m.id,
-                // On Cloud, serve from DB to ensure persistence (ephemeral FS)
                 url: m.data ? `/api/media/image/${m.id}` : m.url,
                 createdAt: m.createdAt
             })));
         }
 
         // --- 🏠 LOCAL MODE (OFFLINE) ---
-        const publicDir = path.join(process.cwd(), 'public', 'photos');
+        let publicDir = path.join(process.cwd(), 'public', 'photos');
+        let urlPrefix = '/photos/';
+
+        if (activeEvent?.slug) {
+            publicDir = path.join(publicDir, activeEvent.slug);
+            urlPrefix = `/photos/${activeEvent.slug}/`;
+        }
+
         if (!fs.existsSync(publicDir)) return NextResponse.json([]);
 
         const files = fs.readdirSync(publicDir)
             .filter(f => {
                 const lower = f.toLowerCase();
-                // SHOW ONLY PROCESSED FILES (web_ or edited_)
-                // Hide raw 'DSC_xxxx.jpg' and 'web_DSC_xxxx.jpg' (auto-generated previews) to prevent duplicates
-                // We only want to show the final Kiosk exports which are 'web_edited_'
                 const isWeb = lower.startsWith('web_');
                 const isEdited = lower.startsWith('edited_');
                 const isAutoPreview = lower.startsWith('web_dsc_');
 
                 return (isWeb || isEdited) && !isAutoPreview &&
-                    (lower.startsWith('print_') === false) && // Explicitly exclude prints
+                    (lower.startsWith('print_') === false) &&
                     (lower.endsWith('.jpg') || lower.endsWith('.jpeg'));
             })
             .map(f => ({
@@ -53,8 +67,8 @@ export async function GET() {
             .slice(0, 50);
 
         const media = files.map(f => ({
-            id: f.name, // ID is filename
-            url: `/photos/${f.name}`,
+            id: f.name,
+            url: `${urlPrefix}${f.name}`, // Append slug to URL if needed
             createdAt: new Date(f.time)
         }));
 
