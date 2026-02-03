@@ -26,11 +26,21 @@ export async function POST(req: Request) {
 
         // Loading Settings
         const settings = getSettings();
-        const smtp = settings.smtp_config;
+        let smtp = settings.smtp_config;
         const template = settings.email_template || {};
 
+        // Fallback to Env Vars (for Cloud/Railway)
+        if (!smtp && process.env.SMTP_HOST) {
+            smtp = {
+                host: process.env.SMTP_HOST,
+                port: process.env.SMTP_PORT || '587',
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS
+            };
+        }
+
         if (!smtp || !smtp.host || !smtp.user || !smtp.pass) {
-            return NextResponse.json({ error: 'SMTP Settings missing in settings.json' }, { status: 500 });
+            return NextResponse.json({ error: 'SMTP Settings missing in settings.json or ENV' }, { status: 500 });
         }
 
         // Normalizace na pole
@@ -55,14 +65,15 @@ export async function POST(req: Request) {
 
         // Příprava příloh
         const attachments = await Promise.all(urls.map(async (url: string, index: number) => {
-            // URL je lokální cesta k API "/api/view/..."
-            // Musíme ji fetchonout a udělat z ní buffer
-            // Pokud je to plna URL (http...), pouzijeme ji, jinak localhost
+            // URL resolution:
+            // 1. If absolute (http...), use it.
+            // 2. If relative, try to prepend localhost or NEXT_PUBLIC_BASE_URL
 
-            // Check if we are running on custom port (e.g. 3000)
-            // In local/kiosk mode usually localhost:3000
-            const baseUrl = 'http://localhost:3000';
-            const fetchUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
+            let fetchUrl = url;
+            if (!url.startsWith('http')) {
+                const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+                fetchUrl = `${baseUrl}${url}`;
+            }
 
             try {
                 const res = await fetch(fetchUrl);
