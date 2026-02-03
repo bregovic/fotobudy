@@ -24,11 +24,18 @@ export async function POST(req: NextRequest) {
 
         // [FIX DUPLICATES] Použijeme deterministický název (bez timestampu).
         const safeName = originalName.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const webFilename = isPrint ? `print_${safeName}` : `web_${safeName}`;
+        let webFilename = isPrint ? `print_${safeName}` : `web_${safeName}`;
 
         let processedBuffer: Buffer;
 
-        if (isPrint) {
+        // [CLOUD SYNC OPTIMIZATION]
+        // Pokud soubor už začíná na 'cloud_', znamená to, že byl před-optimalizován klientem (cloud-sync.js).
+        // Nepřidáváme další prefix a nekomprimujeme znovu.
+        if (originalName.startsWith('cloud_')) {
+            console.log(`[UPLOAD] Detected optimized CLOUD file: ${originalName}`);
+            webFilename = originalName;
+            processedBuffer = buffer; // Use original buffer (already optimized)
+        } else if (isPrint) {
             // PRO TISK: Necháme originál (nebo jen lehce zmenšíme pokud je obří)
             processedBuffer = await sharp(buffer)
                 .resize(2400, 2400, { fit: 'inside', withoutEnlargement: true })

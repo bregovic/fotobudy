@@ -80,6 +80,33 @@ export default function GalleryPage() {
             showToast('Zadej platný email!');
             return;
         }
+
+        // Pokud nemáme SMTP konfiguraci (jsme na webu/ mobilu), pošleme příkaz do kiosku
+        if (!smtpConfig) {
+            showToast('Odesílám požadavek do kiosku... 📨');
+            try {
+                const filename = selectedPhoto?.split('/').pop();
+                await fetch('/api/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cmd: 'SEND_EMAIL',
+                        params: {
+                            email: emailInput,
+                            filename: filename,
+                            photoUrl: selectedPhoto
+                        }
+                    })
+                });
+                showToast('Požadavek odeslán! ✅');
+                setShowEmailModal(false);
+                setEmailInput('');
+            } catch (e) {
+                showToast('Chyba odesílání požadavku ❌');
+            }
+            return;
+        }
+
         showToast('Odesílám email... 📨');
 
         try {

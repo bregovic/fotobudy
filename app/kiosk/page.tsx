@@ -202,7 +202,8 @@ export default function KioskPage() {
         selectedSticker: null as string | null,
         email: '',
         printWidth: 148, // mm (Canon Postcard standard)
-        printHeight: 100 // mm
+        printHeight: 100, // mm
+        smtp: { host: '', port: '', user: '', pass: '' }
     });
 
     // ... (rest of the file until printSelected)
@@ -338,6 +339,13 @@ export default function KioskPage() {
         if (savedCmdPort) setSessionSettings(s => ({ ...s, commandPort: parseInt(savedCmdPort) }));
         if (savedPath) setSessionSettings(s => ({ ...s, localPhotoPath: savedPath }));
 
+        // Load Server Settings (SMTP)
+        fetch('/api/settings').then(r => r.json()).then(data => {
+            if (data.smtp_config) {
+                setSessionSettings(s => ({ ...s, smtp: data.smtp_config }));
+            }
+        }).catch(e => console.error(e));
+
         const resetInterval = setInterval(() => setFailedPorts([]), 30000);
 
         const scanPorts = async () => {
@@ -433,16 +441,34 @@ export default function KioskPage() {
     const lastProcessedIdRef = useRef<string | null>(null);
     const isFirstPoll = useRef(true);
 
-    // Sync Photo Path to Server (for Watcher)
+    // Sync Settings to Server (Debounced)
+    // Sync Photo Path (Debounced)
     useEffect(() => {
-        if (sessionSettings.localPhotoPath) {
-            fetch('/api/settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ key: 'photo_path', value: sessionSettings.localPhotoPath })
-            }).catch(e => console.error("Settings sync failed", e));
-        }
+        const t = setTimeout(() => {
+            if (sessionSettings.localPhotoPath) {
+                fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: 'photo_path', value: sessionSettings.localPhotoPath })
+                }).catch(e => console.error("Path sync failed", e));
+            }
+        }, 1000);
+        return () => clearTimeout(t);
     }, [sessionSettings.localPhotoPath]);
+
+    // Sync SMTP Config (Debounced)
+    useEffect(() => {
+        const t = setTimeout(() => {
+            if (sessionSettings.smtp) {
+                fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ smtp_config: sessionSettings.smtp })
+                }).catch(e => console.error("SMTP sync failed", e));
+            }
+        }, 1000);
+        return () => clearTimeout(t);
+    }, [sessionSettings.smtp]);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -789,6 +815,14 @@ export default function KioskPage() {
             setGalleryPhotos(prev => prev.filter(p => !selectedPhotoIds.includes(p.id))); setSelectedPhotoIds([]); showToast('Smazáno 🗑️');
         } catch (e) { showToast('Chyba mazání'); }
     };
+
+    const updateSmtp = (key: string, val: string) => {
+        setSessionSettings(prev => {
+            const next = { ...prev, smtp: { ...prev.smtp, [key]: val } };
+            return next;
+        });
+    };
+
     const bulkEmail = async () => {
         if (selectedPhotoIds.length > 3) { showToast('Max 3 fotky!'); return; }
         setShowEmailModal(true); // Open Modal with context
@@ -897,6 +931,34 @@ export default function KioskPage() {
                                     </div>
                                     <div className="md:col-span-2 p-6 bg-slate-800 border border-slate-700 rounded-xl space-y-2"><h3 className="font-bold flex gap-2 text-green-400"><FolderOpen size={20} /> Cesta k fotkám</h3><input className="w-full bg-slate-900 p-3 rounded border border-slate-700 font-mono text-sm" value={sessionSettings.localPhotoPath} onChange={e => { setSessionSettings(s => ({ ...s, localPhotoPath: e.target.value })); localStorage.setItem('tech_photo_path', e.target.value); }} /><p className="text-xs text-slate-500">Nastavte stejnou cestu i v DigicamControl.</p></div>
                                     <div className="md:col-span-2 p-6 bg-slate-800 border border-slate-700 rounded-xl flex justify-between items-center"><span className="text-slate-300 font-bold flex gap-2"><Mail size={20} className="text-indigo-400" /> Admin Email</span><input className="bg-slate-900 p-2 rounded border border-slate-700 w-64 text-sm" placeholder="admin@fotobudka.cz" value={sessionSettings.email} onChange={e => setSessionSettings(s => ({ ...s, email: e.target.value }))} /></div>
+
+                                    {/* SMTP CONFIGURATION */}
+                                    <div className="md:col-span-2 p-6 bg-slate-800 border border-slate-700 rounded-xl space-y-4">
+                                        <h3 className="font-bold flex gap-2 text-indigo-400"><Mail size={20} /> Nastavení Emailu (SMTP)</h3>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-1"><label className="text-xs text-slate-500">SMTP Host</label><input className="w-full bg-slate-900 p-2 rounded border border-slate-700 text-sm" placeholder="smtp.gmail.com" value={sessionSettings.smtp?.host || ''} onChange={e => updateSmtp('host', e.target.value)} /></div>
+                                            <div className="space-y-1"><label className="text-xs text-slate-500">Port</label><input className="w-full bg-slate-900 p-2 rounded border border-slate-700 text-sm" placeholder="465" value={sessionSettings.smtp?.port || ''} onChange={e => updateSmtp('port', e.target.value)} /></div>
+                                            <div className="space-y-1"><label className="text-xs text-slate-500">Uživatel</label><input className="w-full bg-slate-900 p-2 rounded border border-slate-700 text-sm" placeholder="vas.email@gmail.com" value={sessionSettings.smtp?.user || ''} onChange={e => updateSmtp('user', e.target.value)} /></div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs text-slate-500">Heslo</label>
+                                                <input type="password" className="w-full bg-slate-900 p-2 rounded border border-slate-700 text-sm" placeholder="16-místné heslo aplikace" value={sessionSettings.smtp?.pass || ''} onChange={e => updateSmtp('pass', e.target.value)} />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="text-[10px] text-slate-400">💡 <strong>Gmail:</strong> Musíte použít "Heslo aplikace" (ne vaše běžné heslo). <br />Jděte na: Google Účet {'>'} Zabezpečení {'>'} Dvoufázové ověření {'>'} Hesla aplikací.</p>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-slate-950/50 p-2 rounded">
+                                            <p className="text-xs text-slate-500">Změny se ukládají automaticky.</p>
+                                            <button onClick={async () => {
+                                                try {
+                                                    const res = await fetch('/api/email', { method: 'POST', body: JSON.stringify({ email: sessionSettings.smtp?.user, isTest: true }) });
+                                                    const d = await res.json();
+                                                    if (d.success) showToast('Test OK ✅'); else showToast('Chyba: ' + d.error);
+                                                } catch (e) { showToast('Chyba spojení'); }
+                                            }} className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-bold">Odeslat test</button>
+                                        </div>
+                                    </div>
+
                                     <div className="md:col-span-2 flex justify-end gap-4 p-6">
                                         <button onClick={() => window.close()} className="px-6 py-2 bg-red-900/50 hover:bg-red-900 text-red-200 rounded font-bold transition-colors">Zavřít Aplikaci</button>
                                     </div>

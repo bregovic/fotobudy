@@ -140,16 +140,20 @@ export default function ProfilePage() {
         };
 
         try {
-            await fetch('/api/settings', {
+            const res = await fetch('/api/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(settings)
             });
-            if (!silent) alert('Nastavení uloženo do databáze! ✅');
+
+            if (!res.ok) throw new Error(res.statusText);
+
+            if (!silent) alert('Nastavení uloženo! ✅');
             setLoading(false);
             return true;
         } catch (e) {
-            if (!silent) alert('Chyba ukládání!');
+            console.error(e);
+            if (!silent) alert('Chyba ukládání! Zkontrolujte logy.');
             setLoading(false);
             return false;
         }
@@ -376,7 +380,7 @@ export default function ProfilePage() {
                         {loading ? 'Ukládám...' : 'Uložit nastavení'}
                     </button>
                     <p className="text-center text-xs text-slate-500 mt-4">
-                        Nastavení se ukládá do cloud databáze.
+                        Nastavení se ukládá do lokálního souboru (settings.json).
                     </p>
                 </div>
 

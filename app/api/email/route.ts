@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import fs from 'fs';
 import path from 'path';
+import sharp from 'sharp';
 
 const SETTINGS_FILE = path.join(process.cwd(), 'settings.json');
 
@@ -68,9 +69,15 @@ export async function POST(req: Request) {
                 if (!res.ok) throw new Error(`Fetch failed: ${res.statusText}`);
                 const buffer = await res.arrayBuffer();
 
+                // OPTIMALIZACE: Zmenšit pro email (aby nepadalo na limitu přílohy)
+                const resizedBuffer = await sharp(Buffer.from(buffer))
+                    .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
+                    .jpeg({ quality: 80 })
+                    .toBuffer();
+
                 return {
                     filename: `foto_${index + 1}.jpg`,
-                    content: Buffer.from(buffer)
+                    content: resizedBuffer
                 };
             } catch (e) {
                 console.error(`Failed to fetch attachment ${url}:`, e);

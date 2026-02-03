@@ -24809,3 +24809,123 @@
 [21:14:15] ✅ SLEDUJI: C:\Fotky
 [21:14:15] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
 [21:14:15] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[23:02:18] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[23:02:18] ✅ SLEDUJI: C:\Fotky
+[23:02:18] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[23:02:18] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[23:06:55] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[23:06:55] ✅ SLEDUJI: C:\Fotky
+[23:06:55] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[23:06:55] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[23:34:39] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[23:34:39] ✅ SLEDUJI: C:\Fotky
+[23:34:39] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[23:34:39] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[23:44:14] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[23:44:14] ✅ SLEDUJI: C:\Fotky
+[23:44:14] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[23:44:14] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[23:44:59] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[23:44:59] ✅ SLEDUJI: C:\Fotky
+[23:44:59] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[23:44:59] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[23:46:22] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[23:46:22] ✅ SLEDUJI: C:\Fotky
+[23:46:22] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[23:46:22] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[23:50:41] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[23:50:41] ✅ SLEDUJI: C:\Fotky
+[23:50:41] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[23:50:41] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[23:52:12] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[23:52:12] ✅ SLEDUJI: C:\Fotky
+[23:52:12] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[23:52:12] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[23:59:31] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[23:59:31] ✅ SLEDUJI: C:\Fotky
+[23:59:31] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[23:59:31] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[0:00:38] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[0:00:38] ✅ SLEDUJI: C:\Fotky
+[0:00:38] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[0:00:38] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[0:05:07] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[0:05:07] ✅ SLEDUJI: C:\Fotky
+[0:05:07] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[0:05:07] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[0:08:02] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[0:08:02] ✅ SLEDUJI: C:\Fotky
+[0:08:02] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[0:08:02] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[0:14:31] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[0:14:31] ✅ SLEDUJI: C:\Fotky
+[0:14:31] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[0:14:31] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[0:22:33] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[0:22:33] ✅ SLEDUJI: C:\Fotky
+[0:22:33] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[0:22:33] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[0:26:16] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[0:26:16] ✅ SLEDUJI: C:\Fotky
+[0:26:16] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[0:26:16] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[0:28:18] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[0:28:18] ✅ SLEDUJI: C:\Fotky
+[0:28:18] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[0:28:18] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[0:30:12] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[0:30:12] ✅ SLEDUJI: C:\Fotky
+[0:30:12] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[0:30:12] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[0:34:43] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[0:34:43] ✅ SLEDUJI: C:\Fotky
+[0:34:43] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[0:34:43] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[0:37:10] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[0:37:10] ✅ SLEDUJI: C:\Fotky
+[0:37:10] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[0:37:10] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[0:40:16] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[0:40:16] ✅ SLEDUJI: C:\Fotky
+[0:40:16] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[0:40:16] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[1:11:29] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[1:11:30] ✅ SLEDUJI: C:\Fotky
+[1:11:30] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[1:11:30] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[1:17:52] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[1:17:52] ✅ SLEDUJI: C:\Fotky
+[1:17:52] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[1:17:52] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[13:27:11] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[13:27:11] ✅ SLEDUJI: C:\Fotky
+[13:27:11] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[13:27:11] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[14:25:36] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[14:25:36] ✅ SLEDUJI: C:\Fotky
+[14:25:36] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[14:25:36] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[14:29:49] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[14:29:49] ✅ SLEDUJI: C:\Fotky
+[14:29:49] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[14:29:49] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[16:43:39] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[16:43:39] ✅ SLEDUJI: C:\Fotky
+[16:43:39] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[16:43:39] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[16:57:15] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[16:57:15] ✅ SLEDUJI: C:\Fotky
+[16:57:15] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[16:57:15] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[17:05:54] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[17:05:54] ✅ SLEDUJI: C:\Fotky
+[17:05:54] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[17:05:54] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[22:01:54] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[22:01:54] ✅ SLEDUJI: C:\Fotky
+[22:01:54] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[22:01:54] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[22:21:18] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[22:21:18] ✅ SLEDUJI: C:\Fotky
+[22:21:18] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[22:21:18] ✅ SLEDUJI: C:\Users\Wendulka\Pictures

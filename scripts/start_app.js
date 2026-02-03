@@ -18,9 +18,10 @@ console.log('');
 
 // 0. CLEANUP: Kill zombie processes on ports 3000 & 5555
 console.log('🧹 [0/4] Čištění portů (3000, 5555)...');
-try {
-    const killScript = `
+const killScript = `
         $ports = @(3000, 5555);
+        $global:ErrorActionPreference = 'SilentlyContinue'; # Suppress all errors in this scope
+        
         foreach ($port in $ports) {
             $pids = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique;
             if ($pids) { 
@@ -28,22 +29,37 @@ try {
                 Write-Host "Killed process on port $port"; 
             }
         }
+        
+        # Kill stuck CameraControl
+        Get-Process -Name "CameraControl" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue;
+        
+        # Clear DCC Cache to fix startup hangs
+        $cachePath = "C:\\ProgramData\\DigiCamControl\\Cache";
+        if (Test-Path $cachePath) {
+            try { Remove-Item -Path "$cachePath\\*" -Recurse -Force -ErrorAction SilentlyContinue; } catch {}
+        }
+
+        exit 0; # Always exit success to prevent JS error
     `;
+// Use stdio: 'pipe' to capture output but not throw on stderr output unless exit code is non-zero
+try {
     require('child_process').execSync(`powershell -Command "${killScript.replace(/\r?\n/g, ' ')}"`, { stdio: 'ignore' });
     console.log('      ✅ Porty vyčištěny');
 } catch (e) {
-    console.log('      ⚠️  Nepodařilo se vyčistit porty (možná byly volné)');
+    // Ignorujeme chybu, pravděpodobně nebylo co čistit
 }
 
 // 1. Spustit DigicamControl (jediné oddělené okno)
 console.log('📷 [1/4] Startuji DigicamControl...');
 if (fs.existsSync(DIGICAM_PATH)) {
-    spawn(DIGICAM_PATH, [], {
+    const dcc = spawn(DIGICAM_PATH, [], {
         detached: true,
         stdio: 'ignore',
-        windowsHide: false  // DCC potřebuje své okno
-    }).unref();
-    console.log('      ✅ DigicamControl spuštěn');
+        windowsHide: false
+    });
+    dcc.unref();
+
+    console.log('      ✅ DigicamControl spuštěn (okno by se mělo objevit)');
 
 } else {
     console.log('      ℹ️  DigicamControl nenalezen (možná již běží)');
@@ -120,7 +136,7 @@ function checkServer() {
             console.log('✅ VŠE BĚŽÍ! Server je připraven.');
             console.log('   -> Kiosk: http://localhost:' + LOCAL_PORT + '/kiosk');
             console.log('   -> Remote: http://localhost:' + LOCAL_PORT + '/remote');
-            openChromeApp();
+            openChromeApp(); // Re-enabled as app appears 'broken' without it
         } else if (!serverReady) {
             setTimeout(checkServer, 1000);
         }

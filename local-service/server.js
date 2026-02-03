@@ -251,8 +251,12 @@ app.get('/cloud-stream-status', (req, res) => {
 // Checks for new photos and generates 'web_' versions for gallery
 function startBackgroundProcessing() {
     console.log('[BG] Starting photo processor...');
+    let isProcessing = false;
     setInterval(async () => {
+        if (isProcessing) return;
+        isProcessing = true;
         try {
+            if (!fs.existsSync(SAVE_DIR)) return;
             const files = fs.readdirSync(SAVE_DIR);
 
             // Find original JPEGs that don't have a web_ counterpart
@@ -281,18 +285,22 @@ function startBackgroundProcessing() {
                     await resizeImagePowershell(filePath, tempPath, 1200);
 
                     // 2. Move to destination
-                    const destPath = path.join(SAVE_DIR, `web_${textFile}`);
-                    fs.copyFileSync(tempPath, destPath);
-                    fs.unlinkSync(tempPath);
+                    if (fs.existsSync(tempPath)) {
+                        const destPath = path.join(SAVE_DIR, `web_${textFile}`);
+                        fs.copyFileSync(tempPath, destPath);
+                        fs.unlinkSync(tempPath);
 
-                    console.log(`[BG] Created web version: ${destPath}`);
+                        console.log(`[BG] Created web version: ${destPath}`);
 
-                    // INJECT REVIEW FRAME INTO STREAM
-                    try {
-                        latestFrame = fs.readFileSync(destPath);
-                        isReviewing = true;
-                        setTimeout(() => isReviewing = false, 2000);
-                    } catch (e) { console.error("Preview inject failed", e); }
+                        // INJECT REVIEW FRAME INTO STREAM
+                        try {
+                            latestFrame = fs.readFileSync(destPath);
+                            isReviewing = true;
+                            setTimeout(() => isReviewing = false, 2000);
+                        } catch (e) { console.error("Preview inject failed", e); }
+                    } else {
+                        console.error(`[BG] Error: Temp file not found after resize: ${tempPath}`);
+                    }
 
                 } catch (e) {
                     console.error(`[BG] Error processing ${textFile}:`, e.message);
@@ -301,6 +309,8 @@ function startBackgroundProcessing() {
 
         } catch (e) {
             console.error('[BG] Loop error:', e);
+        } finally {
+            isProcessing = false;
         }
     }, 3000); // Check every 3 seconds
 }
@@ -363,6 +373,7 @@ app.listen(PORT, () => {
     startBackgroundProcessing();
     startCloudStreamUpload();  // Upload live frames to Railway
     startCloudSync();          // Sync photos to Railway DB
+    startCommandPolling();     // Poll for remote commands (Emails)
 });
 
 // --- CLOUD SYNC INTEGRATION ---
@@ -407,4 +418,59 @@ app.post('/sync-now', async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
+
+
+// --- COMMAND POLLING (CLOUD -> LOCAL) ---
+function startCommandPolling() {
+    console.log('[COMMAND-POLL] Spouštím sledování příkazů z cloudu...');
+
+    setInterval(async () => {
+        try {
+            // Polling interval 2s
+            const res = await fetch(`${CLOUD_API_URL}/api/command`);
+            if (!res.ok) return;
+
+            const data = await res.json();
+            const { command, params, id } = data;
+
+            if (command === 'SEND_EMAIL' && params) {
+                console.log(`[COMMAND] 📨 Požadavek na email: ${params.email}`);
+
+                // Získat lokální URL
+                let photoUrl = params.photoUrl;
+                // Pokud je v parametrech název souboru, použijeme ho (preferováno pro originální kvalitu)
+                if (params.filename) {
+                    // Název na cloudu bývá "cloud_web_IMAGE.jpg", lokálně "web_IMAGE.jpg"
+                    const localName = params.filename.replace(/^cloud_/, '');
+
+                    // Zkontrolujeme jestli soubor existuje
+                    const localPath = path.join(SAVE_DIR, localName);
+                    if (fs.existsSync(localPath)) {
+                        // Použijeme bridge URL (localhost:5555)
+                        photoUrl = `http://127.0.0.1:${PORT}/photos/${localName}`;
+                    }
+                }
+
+                console.log(`[COMMAND] Odesílám fotku: ${photoUrl}`);
+
+                // Zavolat API Next.js aplikace (která má SMTP config)
+                // Předpokládáme že Next.js běží na portu 3000
+                await fetch('http://localhost:3000/api/email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: params.email,
+                        photoUrls: [photoUrl],
+                        isTest: false
+                    })
+                });
+            }
+
+        } catch (e) {
+            // Nechceme spamovat logy chybami připojení
+            if (e.cause && e.cause.code === 'ECONNREFUSED') return;
+            // console.error('[COMMAND-POLL] Chyba:', e.message);
+        }
+    }, 3000);
+}
 

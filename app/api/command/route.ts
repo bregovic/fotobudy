@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-// Jednoduchá paměť pro příkazy (v produkci by byla lepší DB nebo Redis)
-// Ukládáme příkaz a timestamp
-let pendingCommand: { cmd: string, time: number } | null = null;
+import { prisma } from '@/lib/prisma';
 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { cmd } = body;
+        const { cmd, params } = body;
 
         if (cmd) {
-            console.log(`[CLOUD] Přijat příkaz od Kiosku: ${cmd}`);
-            pendingCommand = { cmd, time: Date.now() };
+            console.log(`[CLOUD] Přijat příkaz: ${cmd}`);
+            await prisma.command.create({
+                data: {
+                    command: cmd,
+                    params: params ? JSON.stringify(params) : null,
+                    processed: false
+                }
+            });
             return NextResponse.json({ success: true });
         }
         return NextResponse.json({ error: 'No command' }, { status: 400 });
@@ -22,20 +25,39 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
     // Bridge se ptá: "Mám něco dělat?"
+    try {
+        // 1. Najít nejstarší nezpracovaný příkaz
+        const command = await prisma.command.findFirst({
+            where: { processed: false },
+            orderBy: { createdAt: 'asc' }
+        });
 
-    // Pokud je příkaz starší než 5 sekund, ignorujeme ho (vypršel)
-    if (pendingCommand && (Date.now() - pendingCommand.time > 5000)) {
-        pendingCommand = null;
+        if (command) {
+            // 2. Označit jako zpracovaný
+            await prisma.command.update({
+                where: { id: command.id },
+                data: { processed: true }
+            });
+
+            let parsedParams = null;
+            if (command.params) {
+                try {
+                    parsedParams = JSON.parse(command.params);
+                } catch (e) {
+                    // ignorovat
+                }
+            }
+
+            return NextResponse.json({
+                command: command.command,
+                params: parsedParams,
+                id: command.id
+            });
+        }
+
+        return NextResponse.json({ command: null });
+    } catch (e) {
+        console.error("Chyba při čtení příkazů:", e);
+        return NextResponse.json({ command: null });
     }
-
-    if (pendingCommand) {
-        const cmd = pendingCommand.cmd;
-        // Po přečtení příkaz smažeme (aby se nevykonal 2x)
-        // POZOR: Pokud by bylo více Bridge klientů, mohl by to vzít nesprávný,
-        // ale my máme jen jeden PC s foťákem.
-        pendingCommand = null;
-        return NextResponse.json({ command: cmd });
-    }
-
-    return NextResponse.json({ command: null });
 }
