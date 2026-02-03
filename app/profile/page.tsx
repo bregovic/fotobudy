@@ -1,224 +1,202 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Home, Save, Lock, LogOut, RefreshCw, X, Image as ImageIcon } from 'lucide-react';
+import { Home, Save, Lock, LogOut, RefreshCw, X, Image as ImageIcon, Settings, Calendar, ShieldCheck } from 'lucide-react';
 
 export default function ProfilePage() {
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [password, setPassword] = useState('');
+    const [activeTab, setActiveTab] = useState<'event' | 'tech'>('event');
+    const [techAuth, setTechAuth] = useState(false);
+    const [techPasswordInput, setTechPasswordInput] = useState('');
 
-    // SMTP Settings
+    // --- STATES ---
+
+    // Events
+    const [events, setEvents] = useState<any[]>([]);
+    const [activeEventId, setActiveEventId] = useState<string | null>(null);
+    const [newEventName, setNewEventName] = useState('');
+    const [newEventPassword, setNewEventPassword] = useState('');
+
+    // SMTP Settings (Tech)
     const [smtpHost, setSmtpHost] = useState('');
     const [smtpPort, setSmtpPort] = useState('587');
     const [smtpUser, setSmtpUser] = useState('');
     const [smtpPass, setSmtpPass] = useState('');
 
-    // Email Template Settings
+    // Email Template (Kiosk)
     const [emailSubject, setEmailSubject] = useState('Tvoje fotka z Blick & Cvak! 🥳');
     const [emailBody, setEmailBody] = useState('Ahoj! Tady je tvoje fotka z akce. Užij si ji!');
 
-    // AI Settings
+    // AI Settings (Tech)
     const [openAiKey, setOpenAiKey] = useState('');
 
-    // System Settings
+    // System Settings (Tech)
     const [useCloudStream, setUseCloudStream] = useState(false);
 
-    // Assets (Graphics)
+    // Assets (Kiosk)
     const [assets, setAssets] = useState<any[]>([]);
 
     // Loading State
     const [loading, setLoading] = useState(false);
     const [emailLog, setEmailLog] = useState<string | null>(null);
 
-    // Načtení z DB
+    // --- INITIAL LOAD ---
     useEffect(() => {
-        setLoading(true);
+        loadSettings();
+        loadAssets();
+        loadEvents();
+    }, []);
 
-        // 1. Settings
+    // --- API CALLS ---
+
+    const loadSettings = () => {
+        setLoading(true);
         fetch('/api/settings')
             .then(res => res.json())
             .then(data => {
-                // SMTP
                 if (data.smtp_config) {
                     setSmtpHost(data.smtp_config.host || '');
                     setSmtpPort(data.smtp_config.port || '587');
                     setSmtpUser(data.smtp_config.user || '');
                     setSmtpPass(data.smtp_config.pass || '');
                 }
-                // Template
                 if (data.email_template) {
                     setEmailSubject(data.email_template.subject || 'Tvoje fotka z FotoBuddy! 🥳');
                     setEmailBody(data.email_template.body || 'Ahoj! Tady je tvoje fotka z akce. Užij si ji!');
                 }
-                // AI
                 if (data.openai_api_key) setOpenAiKey(data.openai_api_key);
-
-                // Cloud
                 const cloudVal = data.use_cloud_stream;
                 if (cloudVal !== undefined && cloudVal !== null && cloudVal !== '') {
                     setUseCloudStream(String(cloudVal).toLowerCase() === 'true' || String(cloudVal) === '1');
-                } else {
-                    // Fallback visual same as Kiosk logic
-                    if (window.location.protocol === 'https:' || window.location.hostname.includes('railway.app')) {
-                        setUseCloudStream(true);
-                    }
+                } else if (typeof window !== 'undefined' && (window.location.protocol === 'https:' || window.location.hostname.includes('railway.app'))) {
+                    setUseCloudStream(true);
                 }
+                setLoading(false);
             })
-            .catch(console.error);
+            .catch(() => setLoading(false));
+    };
 
-        // 2. Assets
-        fetchAssets();
-
-        setLoading(false);
-    }, []);
-
-    const fetchAssets = () => {
+    const loadAssets = () => {
         fetch('/api/assets')
             .then(res => res.json())
-            .then(data => {
-                if (Array.isArray(data)) setAssets(data);
-            })
-            .catch(console.error);
+            .then(data => { if (Array.isArray(data)) setAssets(data); });
     };
 
-    const uploadAsset = async (e: React.ChangeEvent<HTMLInputElement>, type: string) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+    const loadEvents = () => {
+        fetch('/api/event')
+            .then(res => res.json())
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setEvents(data);
+                    const active = data.find((e: any) => e.isActive);
+                    if (active) setActiveEventId(active.id);
+                }
+            });
+    };
 
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('type', type);
-
+    const createEvent = async () => {
+        if (!newEventName) return alert('Zadejte název události');
         try {
-            const res = await fetch('/api/assets', { method: 'POST', body: formData });
+            const res = await fetch('/api/event', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: newEventName,
+                    password: newEventPassword,
+                    makeActive: true // Auto activate
+                })
+            });
             const data = await res.json();
             if (data.success) {
-                fetchAssets();
-                alert('Nahráno! ✅');
+                alert('Událost vytvořena a aktivována! ✅');
+                setNewEventName('');
+                setNewEventPassword('');
+                loadEvents();
             } else {
-                alert('Chyba nahrávání: ' + (data.error || 'Neznámá chyba'));
+                alert('Chyba: ' + data.error);
             }
-        } catch (e: any) { console.error(e); alert('Chyba komunikace: ' + e.message); }
+        } catch (e) { alert('Chyba vytváření události'); }
     };
 
-    const deleteAsset = async (id: string) => {
-        if (!confirm('Opravdu smazat?')) return;
+    const activateEvent = async (id: string) => {
         try {
-            await fetch('/api/assets', {
-                method: 'DELETE',
+            await fetch('/api/event/active', {
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id })
             });
-            setAssets(prev => prev.filter(a => a.id !== id));
-        } catch (e) { alert('Chyba mazání'); }
+            setActiveEventId(id);
+            alert('Událost aktivována! Folder se změní. 📂');
+            loadEvents();
+        } catch (e) { alert('Chyba přepnutí události'); }
     };
 
-    const handleLogin = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (password === 'Heslo123') {
-            setIsAuthenticated(true);
-        } else {
-            alert('Špatné heslo!');
-        }
-    };
-
-    const handleSave = async (silent = false) => {
+    const handleSaveSettings = async (silent = false) => {
         setLoading(true);
         const settings = {
-            smtp_config: {
-                host: smtpHost,
-                port: smtpPort,
-                user: smtpUser,
-                pass: smtpPass
-            },
-            email_template: {
-                subject: emailSubject,
-                body: emailBody
-            },
+            smtp_config: { host: smtpHost, port: smtpPort, user: smtpUser, pass: smtpPass },
+            email_template: { subject: emailSubject, body: emailBody },
             openai_api_key: openAiKey,
             use_cloud_stream: String(useCloudStream)
         };
-
         try {
             const res = await fetch('/api/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(settings)
             });
-
-            if (!res.ok) throw new Error(res.statusText);
-
+            if (!res.ok) throw new Error('Failed');
             if (!silent) alert('Nastavení uloženo! ✅');
-            setLoading(false);
-            return true;
-        } catch (e) {
-            console.error(e);
-            if (!silent) alert('Chyba ukládání! Zkontrolujte logy.');
-            setLoading(false);
-            return false;
+        } catch (e) { if (!silent) alert('Chyba ukládání!'); }
+        setLoading(false);
+    };
+
+    const uploadAsset = async (e: React.ChangeEvent<HTMLInputElement>, type: string) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('type', type);
+        await fetch('/api/assets', { method: 'POST', body: formData });
+        loadAssets();
+    };
+
+    const deleteAsset = async (id: string) => {
+        if (!confirm('Opravdu smazat?')) return;
+        await fetch('/api/assets', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
+        });
+        setAssets(prev => prev.filter(a => a.id !== id));
+    };
+
+    const unlockTech = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (techPasswordInput === 'Starter123') {
+            setTechAuth(true);
+            setActiveTab('tech');
+        } else {
+            alert('Špatné heslo!');
         }
     };
 
-    const handleTestEmail = async () => {
-        if (!smtpUser.includes('@')) { alert('Vyplňte správně email uživatele.'); return; }
-
-        setEmailLog('Odesílám test...');
-        const saved = await handleSave(true);
-        if (!saved) { setEmailLog('Chyba ukládání nastavení před testem.'); return; }
-
-        if (!confirm(`Nastavení uloženo. Odeslat test na: ${smtpUser}?`)) return;
-
-        try {
-            const res = await fetch('/api/email', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: smtpUser, isTest: true })
-            });
-            const d = await res.json();
-
-            setEmailLog(`[${new Date().toLocaleTimeString()}] Odpověď serveru:\n${JSON.stringify(d, null, 2)}`);
-
-            if (d.success) {
-                alert(`✅ Test úspěšný!\nMessage ID: ${d.messageId}`);
-            } else {
-                alert('❌ Chyba odesílání.');
-            }
-        } catch (e: any) {
-            setEmailLog(`Chyba komunikace:\n${e.message}`);
-            alert('Chyba komunikace se serverem.');
-        }
-    };
-
-    const handleLogout = () => {
-        setIsAuthenticated(false);
-        setPassword('');
-    };
-
-    if (!isAuthenticated) {
+    if (activeTab === 'tech' && !techAuth) {
         return (
             <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
-                <Link href="/" className="absolute top-4 left-4 p-3 bg-white/10 rounded-full hover:bg-white/20">
-                    <Home size={24} />
-                </Link>
                 <div className="w-full max-w-sm bg-slate-900 p-8 rounded-2xl shadow-2xl border border-slate-700">
-                    <div className="flex justify-center mb-6">
-                        <div className="p-4 bg-slate-800 rounded-full">
-                            <Lock size={40} className="text-emerald-500" />
-                        </div>
-                    </div>
-                    <h2 className="text-2xl font-bold text-center mb-6">Přihlášení do správy</h2>
-                    <form onSubmit={handleLogin} className="space-y-4">
+                    <h2 className="text-2xl font-bold text-center mb-6">Technické nastavení</h2>
+                    <p className="text-slate-400 text-center mb-4 text-sm">Zadejte heslo technika</p>
+                    <form onSubmit={unlockTech} className="space-y-4">
                         <input
                             type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            placeholder="Zadejte heslo"
-                            className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl text-center text-xl tracking-widest focus:border-emerald-500 outline-none transition-colors"
+                            value={techPasswordInput}
+                            onChange={(e) => setTechPasswordInput(e.target.value)}
+                            className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl text-center text-xl focus:border-red-500 outline-none"
+                            placeholder="******"
                             autoFocus
                         />
-                        <button type="submit" className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-lg transition-transform active:scale-95">
-                            Odemknout
-                        </button>
+                        <button type="submit" className="w-full py-4 bg-red-600 hover:bg-red-500 rounded-xl font-bold">Odemknout</button>
+                        <button onClick={() => setActiveTab('event')} type="button" className="w-full py-2 text-slate-500 hover:text-white">Zpět</button>
                     </form>
                 </div>
             </div>
@@ -227,162 +205,186 @@ export default function ProfilePage() {
 
     return (
         <div className="min-h-screen bg-slate-950 text-white p-4">
-            <div className="flex items-center justify-between mb-8 max-w-2xl mx-auto mt-4">
-                <Link href="/" className="p-3 bg-white/10 rounded-full hover:bg-white/20 transition-colors flex items-center gap-2">
-                    <Home size={20} />
-                    <span>Zpět</span>
+            {/* Header */}
+            <div className="flex items-center justify-between mb-8 max-w-4xl mx-auto mt-4">
+                <Link href="/" className="p-3 bg-white/10 rounded-full hover:bg-white/20 flex items-center gap-2">
+                    <Home size={20} /> <span>Domů</span>
                 </Link>
-                <h1 className="text-2xl font-bold">Nastavení (Cloud DB)</h1>
-                <button onClick={handleLogout} className="p-3 bg-red-500/20 text-red-400 rounded-full hover:bg-red-500/30">
-                    <LogOut size={20} />
+                <h1 className="text-2xl font-bold">Nastavení</h1>
+                <div className="w-20"></div>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex justify-center mb-8 gap-4">
+                <button
+                    onClick={() => setActiveTab('event')}
+                    className={`px-6 py-3 rounded-full font-bold flex items-center gap-2 transition-all ${activeTab === 'event' ? 'bg-indigo-600 shadow-lg scale-105' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+                >
+                    <Calendar size={20} /> Událost & Kiosk
+                </button>
+                <button
+                    onClick={() => setActiveTab('tech')}
+                    className={`px-6 py-3 rounded-full font-bold flex items-center gap-2 transition-all ${activeTab === 'tech' ? 'bg-red-600 shadow-lg scale-105' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+                >
+                    <Settings size={20} /> Technické
                 </button>
             </div>
 
-            <div className="max-w-2xl mx-auto bg-slate-900 p-8 rounded-2xl shadow-xl border border-slate-700 space-y-8">
+            <div className="max-w-4xl mx-auto space-y-8">
 
-                {/* System Section */}
-                <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-blue-400 border-b border-blue-500/30 pb-2">⚙️ Systém</h3>
-                    <div className="flex items-center justify-between p-4 bg-slate-950 rounded-xl border border-slate-700">
-                        <div>
-                            <h4 className="font-medium text-white">Cloud Stream Režim</h4>
-                            <p className="text-sm text-slate-500">Používat snapshoty místo přímého streamu (Nutné pro HTTPS/Railway).</p>
-                        </div>
-                        <button
-                            onClick={() => setUseCloudStream(!useCloudStream)}
-                            className={`w-14 h-8 rounded-full transition-colors relative ${useCloudStream ? 'bg-blue-600' : 'bg-slate-700'}`}
-                        >
-                            <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform shadow-sm ${useCloudStream ? 'translate-x-7' : 'translate-x-1'}`}></div>
-                        </button>
-                    </div>
-                </div>
+                {/* === EVENT TAB === */}
+                {activeTab === 'event' && (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
 
-                {/* GRAPHICS MANAGER Section */}
-                <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-yellow-400 border-b border-yellow-500/30 pb-2">🎨 Správce Grafiky</h3>
+                        {/* 1. Event Management */}
+                        <div className="bg-slate-900 p-6 rounded-2xl border border-slate-700">
+                            <h3 className="text-xl font-bold text-indigo-400 mb-6 flex items-center gap-2"><Calendar /> Správa Události</h3>
 
-                    {/* Backgrounds */}
-                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                        <label className="block text-sm font-bold text-slate-300 mb-4">🖼️ Pozadí (pro klíčování)</label>
-                        <div className="grid grid-cols-3 gap-2 mb-4">
-                            {assets.filter(a => a.type === 'BACKGROUND').map(asset => (
-                                <div key={asset.id} className="relative group aspect-video bg-slate-800 rounded-lg overflow-hidden border border-slate-700">
-                                    <img src={asset.url} className="w-full h-full object-cover" />
-                                    <button onClick={() => deleteAsset(asset.id)} className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={12} /></button>
+                            {/* Create New */}
+                            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 mb-6">
+                                <h4 className="font-bold mb-3 text-sm text-slate-300">Nová akce (Svatba, Oslava...)</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <input
+                                        type="text"
+                                        placeholder="Název (např. Svatba Mirek)"
+                                        value={newEventName}
+                                        onChange={(e) => setNewEventName(e.target.value)}
+                                        className="p-3 bg-slate-900 border border-slate-700 rounded-lg outline-none focus:border-indigo-500"
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="Heslo (nepovinné)"
+                                        value={newEventPassword}
+                                        onChange={(e) => setNewEventPassword(e.target.value)}
+                                        className="p-3 bg-slate-900 border border-slate-700 rounded-lg outline-none focus:border-indigo-500"
+                                    />
+                                    <button onClick={createEvent} className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg transition-colors">
+                                        Vytvořit a Aktivovat
+                                    </button>
                                 </div>
-                            ))}
-                            <label className="flex flex-col items-center justify-center bg-slate-900 hover:bg-slate-800 border border-dashed border-slate-700 rounded-lg cursor-pointer transition-colors aspect-video hover:border-yellow-500 hover:text-yellow-500">
-                                <span className="text-2xl">+</span>
-                                <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadAsset(e, 'BACKGROUND')} />
-                            </label>
-                        </div>
-                    </div>
+                            </div>
 
-                    {/* Stickers */}
-                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                        <label className="block text-sm font-bold text-slate-300 mb-4">🦄 Samolepky / Loga</label>
-                        <div className="grid grid-cols-4 gap-2">
-                            {assets.filter(a => a.type === 'STICKER').map(asset => (
-                                <div key={asset.id} className="relative group aspect-square bg-slate-800 rounded-lg overflow-hidden border border-slate-700 p-2">
-                                    <img src={asset.url} className="w-full h-full object-contain" />
-                                    <button onClick={() => deleteAsset(asset.id)} className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={12} /></button>
+                            {/* List */}
+                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                                <h4 className="font-bold mb-2 text-sm text-slate-300">Seznam událostí</h4>
+                                {events.map(event => (
+                                    <div key={event.id} className={`flex items-center justify-between p-3 rounded-lg border ${event.isActive ? 'bg-indigo-900/30 border-indigo-500' : 'bg-slate-950 border-slate-800'}`}>
+                                        <div>
+                                            <div className="font-bold">{event.name}</div>
+                                            <div className="text-xs text-slate-500">/{event.slug}</div>
+                                        </div>
+                                        {event.isActive ? (
+                                            <span className="text-indigo-400 text-sm font-bold flex items-center gap-1"><ShieldCheck size={16} /> Aktivní</span>
+                                        ) : (
+                                            <button onClick={() => activateEvent(event.id)} className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-xs rounded border border-slate-600">Aktivovat</button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 2. Visuals (Assets) */}
+                        <div className="bg-slate-900 p-6 rounded-2xl border border-slate-700">
+                            <h3 className="text-xl font-bold text-yellow-500 mb-6 flex items-center gap-2"><ImageIcon /> Vzhled Kiosku</h3>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Backgrounds */}
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-400 mb-2">Pozadí (Klíčování)</label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {assets.filter(a => a.type === 'BACKGROUND').map(asset => (
+                                            <div key={asset.id} className="relative group aspect-video bg-slate-950 rounded border border-slate-800 overflow-hidden">
+                                                <img src={asset.url} className="w-full h-full object-cover" />
+                                                <button onClick={() => deleteAsset(asset.id)} className="absolute top-1 right-1 bg-red-600 p-1 rounded-full opacity-0 group-hover:opacity-100"><X size={10} /></button>
+                                            </div>
+                                        ))}
+                                        <label className="aspect-video flex items-center justify-center bg-slate-950 border border-dashed border-slate-700 rounded cursor-pointer hover:border-yellow-500 hover:text-yellow-500 transition-colors">
+                                            + <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadAsset(e, 'BACKGROUND')} />
+                                        </label>
+                                    </div>
                                 </div>
-                            ))}
-                            <label className="flex flex-col items-center justify-center bg-slate-900 hover:bg-slate-800 border border-dashed border-slate-700 rounded-lg cursor-pointer transition-colors aspect-square hover:border-yellow-500 hover:text-yellow-500">
-                                <span className="text-2xl">+</span>
-                                <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadAsset(e, 'STICKER')} />
-                            </label>
+
+                                {/* Stickers */}
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-400 mb-2">Samolepky / Loga</label>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {assets.filter(a => a.type === 'STICKER').map(asset => (
+                                            <div key={asset.id} className="relative group aspect-square bg-slate-950 rounded border border-slate-800 overflow-hidden p-1">
+                                                <img src={asset.url} className="w-full h-full object-contain" />
+                                                <button onClick={() => deleteAsset(asset.id)} className="absolute top-1 right-1 bg-red-600 p-1 rounded-full opacity-0 group-hover:opacity-100"><X size={10} /></button>
+                                            </div>
+                                        ))}
+                                        <label className="aspect-square flex items-center justify-center bg-slate-950 border border-dashed border-slate-700 rounded cursor-pointer hover:border-yellow-500 hover:text-yellow-500 transition-colors">
+                                            + <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadAsset(e, 'STICKER')} />
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 3. Email Template */}
+                        <div className="bg-slate-900 p-6 rounded-2xl border border-slate-700">
+                            <h3 className="text-xl font-bold text-pink-500 mb-4">💌 Šablona Emailu (Pro hosty)</h3>
+                            <div className="grid grid-cols-1 gap-4">
+                                <input
+                                    type="text"
+                                    value={emailSubject}
+                                    onChange={(e) => setEmailSubject(e.target.value)}
+                                    className="p-3 bg-slate-950 border border-slate-800 rounded outline-none focus:border-pink-500"
+                                    placeholder="Předmět emailu"
+                                />
+                                <textarea
+                                    value={emailBody}
+                                    onChange={(e) => setEmailBody(e.target.value)}
+                                    className="p-3 bg-slate-950 border border-slate-800 rounded outline-none focus:border-pink-500 min-h-[80px]"
+                                    placeholder="Text emailu"
+                                />
+                            </div>
+                            <div className="mt-4 flex justify-end">
+                                <button onClick={() => handleSaveSettings(false)} className="px-6 py-2 bg-pink-600 hover:bg-pink-500 rounded-full font-bold">Uložit Šablonu</button>
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
 
-                {/* EMAIL TEMPLATE Section */}
-                <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-pink-400 border-b border-pink-500/30 pb-2">💌 Šablona Emailu</h3>
-                    <div>
-                        <label className="block text-sm text-slate-500 mb-1">Předmět e-mailu</label>
-                        <input
-                            type="text"
-                            value={emailSubject}
-                            onChange={(e) => setEmailSubject(e.target.value)}
-                            className="w-full p-3 bg-slate-950 rounded-lg border border-slate-700 focus:border-pink-500 outline-none"
-                            placeholder="Tvoje fotka z akce!"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm text-slate-500 mb-1">Text zprávy</label>
-                        <textarea
-                            value={emailBody}
-                            onChange={(e) => setEmailBody(e.target.value)}
-                            className="w-full p-3 bg-slate-950 rounded-lg border border-slate-700 focus:border-pink-500 outline-none min-h-[100px]"
-                            placeholder="Díky, že jste dorazili..."
-                        />
-                    </div>
-                </div>
+                {/* === TECH TAB === */}
+                {activeTab === 'tech' && (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                        <div className="bg-slate-900 p-8 rounded-2xl border border-red-900/30 shadow-2xl">
+                            <h3 className="text-2xl font-bold text-red-500 mb-8 border-b border-red-900/50 pb-4">⚙️ Technické Nastavení (Restricted)</h3>
 
-                {/* SMTP Section */}
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between border-b border-emerald-500/30 pb-2">
-                        <h3 className="text-lg font-semibold text-emerald-400">📧 Email & SMTP</h3>
-                        <div className="flex flex-col items-end gap-2">
-                            <button onClick={handleTestEmail} className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs rounded border border-slate-600 transition-colors">
-                                Odeslat test ⚡
+                            {/* SMTP */}
+                            <div className="mb-8">
+                                <h4 className="text-lg font-bold text-slate-300 mb-4">SMTP Server (Email)</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                    <input type="text" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} className="p-3 bg-slate-950 border border-slate-700 rounded" placeholder="Host (smtp.gmail.com)" />
+                                    <input type="text" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} className="p-3 bg-slate-950 border border-slate-700 rounded" placeholder="Port (587)" />
+                                    <input type="text" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} className="p-3 bg-slate-950 border border-slate-700 rounded" placeholder="Uživatel" />
+                                    <input type="password" value={smtpPass} onChange={(e) => setSmtpPass(e.target.value)} className="p-3 bg-slate-950 border border-slate-700 rounded" placeholder="Heslo" />
+                                </div>
+                            </div>
+
+                            {/* System */}
+                            <div className="mb-8">
+                                <h4 className="text-lg font-bold text-slate-300 mb-4">Systém</h4>
+                                <div className="flex items-center justify-between p-4 bg-slate-950 rounded border border-slate-700">
+                                    <span>Cloud Stream Mode (Snapshots)</span>
+                                    <button onClick={() => setUseCloudStream(!useCloudStream)} className={`w-12 h-6 rounded-full relative transition-colors ${useCloudStream ? 'bg-green-600' : 'bg-slate-700'}`}>
+                                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${useCloudStream ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                                    </button>
+                                </div>
+                                <div className="mt-4">
+                                    <label className="block text-sm text-slate-500 mb-1">OpenAI API Key</label>
+                                    <input type="password" value={openAiKey} onChange={(e) => setOpenAiKey(e.target.value)} className="w-full p-3 bg-slate-950 border border-slate-700 rounded font-mono" />
+                                </div>
+                            </div>
+
+                            <button onClick={() => handleSaveSettings(false)} className="w-full py-4 bg-red-600 hover:bg-red-500 rounded-xl font-bold shadow-lg">
+                                Uložit Technické Změny
                             </button>
                         </div>
                     </div>
-
-                    {emailLog && (
-                        <div className="text-xs font-mono bg-black p-2 rounded border border-slate-700 text-slate-300 whitespace-pre-wrap overflow-x-auto max-h-40">
-                            {emailLog}
-                        </div>
-                    )}
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="md:col-span-2">
-                            <label className="block text-sm text-slate-500 mb-1">Host (např. smtp.gmail.com)</label>
-                            <input type="text" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} className="w-full p-3 bg-slate-950 rounded-lg border border-slate-700 focus:border-emerald-500 outline-none" placeholder="smtp.gmail.com" />
-                        </div>
-                        <div>
-                            <label className="block text-sm text-slate-500 mb-1">Port</label>
-                            <input type="text" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} className="w-full p-3 bg-slate-950 rounded-lg border border-slate-700 focus:border-emerald-500 outline-none" placeholder="587" />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm text-slate-500 mb-1">Uživatel (Email)</label>
-                        <input type="text" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} className="w-full p-3 bg-slate-950 rounded-lg border border-slate-700 focus:border-emerald-500 outline-none" placeholder="tvuj@email.cz" />
-                    </div>
-
-                    <div>
-                        <label className="block text-sm text-slate-500 mb-1">Heslo (App Password / API Key)</label>
-                        <input type="password" value={smtpPass} onChange={(e) => setSmtpPass(e.target.value)} className="w-full p-3 bg-slate-950 rounded-lg border border-slate-700 focus:border-emerald-500 outline-none" placeholder="••••••••" />
-                    </div>
-                </div>
-
-                {/* AI Section */}
-                <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-purple-400 border-b border-purple-500/30 pb-2">🧠 AI Integrace</h3>
-                    <div>
-                        <label className="block text-sm text-slate-500 mb-1">OpenAI API Key</label>
-                        <input
-                            type="password"
-                            value={openAiKey}
-                            onChange={(e) => setOpenAiKey(e.target.value)}
-                            className="w-full p-3 bg-slate-950 rounded-lg border border-slate-700 focus:border-purple-500 outline-none font-mono text-sm"
-                            placeholder="sk-..."
-                        />
-                    </div>
-                </div>
-
-                <div className="pt-6 border-t border-slate-800">
-                    <button onClick={() => handleSave(false)} disabled={loading} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-xl font-bold text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/20 transition-all">
-                        {loading ? <RefreshCw className="animate-spin" /> : <Save size={20} />}
-                        {loading ? 'Ukládám...' : 'Uložit nastavení'}
-                    </button>
-                    <p className="text-center text-xs text-slate-500 mt-4">
-                        Nastavení se ukládá do lokálního souboru (settings.json).
-                    </p>
-                </div>
+                )}
 
             </div>
         </div>

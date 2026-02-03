@@ -26,6 +26,9 @@ model Media {
   // NOVÉ: Ukládáme fotku (web verzi) přímo do DB
   data      Bytes?
   localPath String?
+  
+  event     Event?   @relation(fields: [eventId], references: [id])
+  eventId   String?
 }
 
 model Command {
@@ -52,3 +55,13 @@ model Asset {
 }
 
 
+
+model Event {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  password  String?
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  media     Media[]
+}

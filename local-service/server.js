@@ -22,14 +22,43 @@ let dccPort = 5513; // Start with default, auto-rotate on error
 // Dynamic URL getter
 const getDccApiUrl = () => `http://${DCC_HOST}:${dccPort}/?CMD=Capture`;
 
-const SAVE_DIR = path.join(process.cwd(), 'public', 'photos');
-const LOCAL_ONLY = true;
+const BASE_PHOTOS_DIR = path.join(process.cwd(), 'public', 'photos');
+let currentEventSlug = '';
+let SAVE_DIR = BASE_PHOTOS_DIR;
 
-const CLOUD_API_URL = 'https://cvak.up.railway.app';
-const CLOUD_UPLOAD_URL = `${CLOUD_API_URL}/api/media/upload`;
+// Load persisted event
+const EVENT_FILE = path.join(__dirname, 'current_event.json');
+function loadCurrentEvent() {
+    if (fs.existsSync(EVENT_FILE)) {
+        try {
+            const saved = JSON.parse(fs.readFileSync(EVENT_FILE));
+            if (saved.slug) {
+                currentEventSlug = saved.slug;
+                SAVE_DIR = path.join(BASE_PHOTOS_DIR, currentEventSlug);
+                console.log(`[EVENT] Aktivní událost: ${saved.name} (${saved.slug})`);
+            }
+        } catch (e) { console.error("Chyba načítání eventu", e); }
+    }
+}
+loadCurrentEvent();
 
 if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true });
-app.use('/photos', express.static(SAVE_DIR));
+
+// Serve base directory so we can access any event via /photos/slug/file.jpg
+// AND serve the current directory at root for backward compatibility if needed, 
+// OR just serve the base and update frontend to know about paths.
+// Let's serve BASE at /photos. 
+// NOTE: This changes API. Old frontend might break if it expects /photos/abc.jpg to be in root public/photos.
+// But we are in charge of frontend too. 
+app.use('/photos', express.static(BASE_PHOTOS_DIR));
+// Also serve the current active folder specifically at /active-photos if we want easy access? 
+// No, let's stick to /photos/slug/... structure for new files. 
+// BUT wait, if SAVE_DIR is root (no event), files are in /photos/img.jpg.
+// If SAVE_DIR is /photos/slug, files are in /photos/slug/img.jpg.
+// Express static on BASE_PHOTOS_DIR handles both!
+// If file is at public/photos/img.jpg -> /photos/img.jpg
+// If file is at public/photos/slug/img.jpg -> /photos/slug/img.jpg
+// Validation: correct.
 
 // --- SHARED FRAME BUFFER STRATEGY ---
 // Instead of every client hitting DCC, we poll once and serve many
@@ -432,6 +461,17 @@ function startCommandPolling() {
 
             const data = await res.json();
             const { command, params, id } = data;
+
+            if (command === 'SET_EVENT' && params) {
+                console.log(`[COMMAND] 📅 Změna události: ${params.name}`);
+                currentEventSlug = params.slug;
+                SAVE_DIR = path.join(BASE_PHOTOS_DIR, currentEventSlug);
+
+                if (!fs.existsSync(SAVE_DIR)) fs.mkdirSync(SAVE_DIR, { recursive: true });
+
+                fs.writeFileSync(EVENT_FILE, JSON.stringify({ slug: params.slug, name: params.name }));
+                console.log(`[EVENT] Složka změněna na: ${SAVE_DIR}`);
+            }
 
             if (command === 'SEND_EMAIL' && params) {
                 console.log(`[COMMAND] 📨 Požadavek na email: ${params.email}`);
