@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, memo } from 'react';
-import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send, Trash2, CameraOff, Home, Palette, Pipette, MousePointer2, Wand2, Layout, Cloud, Wifi, WifiOff, Terminal, Video, FolderOpen, Shield, Lock, CheckCircle2, MessageSquare, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send, Trash2, CameraOff, Home, Palette, Pipette, MousePointer2, Wand2, Layout, Cloud, Wifi, WifiOff, Terminal, Video, FolderOpen, Shield, Lock, CheckCircle2, MessageSquare, ArrowLeft, ArrowRight, Calendar } from 'lucide-react';
 import Link from 'next/link';
 
 const SESSION_ID = 'main';
@@ -306,6 +306,54 @@ export default function KioskPage() {
     const [assets, setAssets] = useState<any[]>([]);
     const [isPickingColor, setIsPickingColor] = useState(false);
     const [streamToken, setStreamToken] = useState(Date.now());
+
+    // --- EVENT LOGIC ---
+    const [events, setEvents] = useState<any[]>([]);
+    const [newEventName, setNewEventName] = useState('');
+
+    // Tech Auth for Modal
+    const [techAuth, setTechAuth] = useState(false);
+    const [techPasswordInput, setTechPasswordInput] = useState('');
+
+    const loadEvents = () => {
+        fetch('/api/event')
+            .then(res => res.json())
+            .then(data => { if (Array.isArray(data)) setEvents(data); })
+            .catch(e => console.error(e));
+    };
+
+    const activateEvent = async (id: string, name: string) => {
+        try {
+            await fetch('/api/event/active', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
+            showToast(`Aktivní: ${name} ✅`);
+            loadEvents();
+        } catch (e) { showToast('Chyba změny!'); }
+    };
+
+    const createEvent = async () => {
+        if (!newEventName) return;
+        try {
+            const res = await fetch('/api/event', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newEventName, makeActive: true })
+            });
+            const d = await res.json();
+            if (d.success) {
+                showToast('Vytvořeno & Aktivní ✅');
+                setNewEventName('');
+                loadEvents();
+            } else showToast('Chyba: ' + d.error);
+        } catch (e) { showToast('Chyba vytvoření'); }
+    };
+
+    useEffect(() => {
+        loadEvents();
+    }, []);
 
     const processingRef = useRef(false);
 
@@ -875,94 +923,175 @@ export default function KioskPage() {
             {/* SETTINGS MODAL */}
             {showSettings && (
                 <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-8 animate-in fade-in zoom-in duration-200">
-                    <div className="bg-slate-900 border border-slate-700 rounded-3xl p-0 max-w-5xl w-full shadow-2xl text-white h-[90vh] flex flex-col overflow-hidden">
-                        <div className="flex bg-slate-950 border-b border-slate-800 p-6 justify-between items-center"><h2 className="text-2xl font-bold flex items-center gap-3"><Settings size={28} /> Nastavení</h2><div className="flex bg-slate-800 rounded-full p-1 border border-slate-700"><button onClick={() => setActiveTab('user')} className={`px-6 py-2 rounded-full font-bold flex gap-2 ${activeTab === 'user' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Palette size={16} /> Focení</button><button onClick={() => setActiveTab('admin')} className={`px-6 py-2 rounded-full font-bold flex gap-2 ${activeTab === 'admin' ? 'bg-red-900/40 text-red-300' : 'text-slate-400'}`}><Shield size={16} /> Admin</button></div><button onClick={() => setShowSettings(false)} className="p-2 hover:bg-white/10 rounded-full"><X size={24} /></button></div>
+                    <div className="bg-slate-900 border border-slate-700 rounded-3xl p-0 max-w-6xl w-full shadow-2xl text-white h-[90vh] flex flex-col overflow-hidden">
+
+                        {/* HEADER */}
+                        <div className="flex bg-slate-950 border-b border-slate-800 p-6 justify-between items-center">
+                            <h2 className="text-2xl font-bold flex items-center gap-3"><Settings size={28} /> Nastavení</h2>
+                            <div className="flex bg-slate-800 rounded-full p-1 border border-slate-700">
+                                <button onClick={() => setActiveTab('user')} className={`px-6 py-2 rounded-full font-bold flex gap-2 transition-all ${activeTab === 'user' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>
+                                    <Calendar size={16} /> Událost
+                                </button>
+                                <button onClick={() => setActiveTab('admin')} className={`px-6 py-2 rounded-full font-bold flex gap-2 transition-all ${activeTab === 'admin' ? 'bg-red-900/40 text-red-300' : 'text-slate-400 hover:text-white'}`}>
+                                    <Shield size={16} /> Technické
+                                </button>
+                            </div>
+                            <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-white/10 rounded-full"><X size={24} /></button>
+                        </div>
+
                         <div className="flex-1 overflow-y-auto p-8 bg-slate-900">
-                            {activeTab === 'user' && (/* ... USER SETTINGS ... */
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                    <div className="space-y-6">
-                                        <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
-                                            <h3 className="font-semibold mb-4 text-green-400 flex items-center gap-2"><Pipette size={18} /> Green Screen</h3>
-                                            <div className="mb-4 relative rounded-lg overflow-hidden border border-slate-600 bg-black aspect-video group">
-                                                <LiveView streamUrl={finalStreamUrl} isBW={sessionSettings.isBW} onClick={handlePreviewClick} className={`w-full h-full object-cover ${isPickingColor ? 'cursor-crosshair' : ''}`} printWidth={sessionSettings.printWidth} printHeight={sessionSettings.printHeight} />
-                                                {isPickingColor && <div className="absolute inset-0 bg-green-500/20 pointer-events-none flex items-center justify-center text-green-300 font-bold border-4 border-green-500 animate-pulse">KLIKNI KAMKOLIV</div>}
-                                                <div className="absolute bottom-2 right-2"><button onClick={() => setIsPickingColor(!isPickingColor)} className={`p-2 rounded-full shadow-lg flex items-center gap-2 text-xs font-bold ${isPickingColor ? 'bg-green-500 text-black' : 'bg-white text-black'}`}><MousePointer2 size={16} /> Kapátko</button></div>
-                                            </div>
-                                            <div className="flex items-center justify-between"><span>Tolerance</span><input type="range" min="10" max="250" value={sessionSettings.chromaTolerance} onChange={e => setSessionSettings({ ...sessionSettings, chromaTolerance: Number(e.target.value) })} className="w-32 accent-green-500 h-2 bg-slate-900 rounded-lg appearance-none cursor-pointer" /></div>
+
+                            {/* === EVENT TAB (USER) === */}
+                            {activeTab === 'user' && (
+                                <div className="space-y-8">
+                                    {/* 1. EVENT MANAGER */}
+                                    <div className="p-6 bg-slate-950 border border-indigo-500/30 rounded-2xl shadow-lg">
+                                        <h3 className="text-xl font-bold text-indigo-400 mb-4 flex items-center gap-2"><Calendar /> Správa Události</h3>
+
+                                        {/* Create */}
+                                        <div className="flex gap-4 mb-6">
+                                            <input
+                                                type="text"
+                                                value={newEventName}
+                                                onChange={(e) => setNewEventName(e.target.value)}
+                                                placeholder="Nová akce (např. Svatba Jana)"
+                                                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl p-4 text-lg focus:border-indigo-500 outline-none"
+                                            />
+                                            <button onClick={createEvent} className="bg-indigo-600 hover:bg-indigo-500 px-8 rounded-xl font-bold text-lg shadow-lg">Vytvořit</button>
                                         </div>
-                                        <div className="p-5 bg-slate-800 border-slate-700 border rounded-xl flex justify-between items-center"><span className="font-semibold">Černobíle</span><div onClick={() => setSessionSettings(s => ({ ...s, isBW: !s.isBW }))} className={`w-14 h-8 rounded-full p-1 cursor-pointer transition-colors ${sessionSettings.isBW ? 'bg-indigo-600' : 'bg-slate-700'}`}><div className={`w-6 h-6 bg-white rounded-full transition-transform ${sessionSettings.isBW ? 'translate-x-6' : ''}`}></div></div></div>
+
+                                        {/* List */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-48 overflow-y-auto p-2">
+                                            {events.map((ev: any) => (
+                                                <div key={ev.id} className={`p-3 rounded-lg border flex justify-between items-center ${ev.isActive ? 'bg-indigo-900/40 border-indigo-500' : 'bg-slate-900 border-slate-800'}`}>
+                                                    <div className="truncate pr-2">
+                                                        <div className="font-bold text-sm">{ev.name}</div>
+                                                        <div className="text-[10px] text-slate-500 truncate">{ev.slug}</div>
+                                                    </div>
+                                                    {ev.isActive ?
+                                                        <span className="text-indigo-400 text-xs font-bold whitespace-nowrap">✅ Aktivní</span> :
+                                                        <button onClick={() => activateEvent(ev.id, ev.name)} className="bg-slate-800 hover:bg-slate-700 text-xs px-3 py-1.5 rounded border border-slate-700">Aktivovat</button>
+                                                    }
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="space-y-6">
-                                        <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl"><h3 className="font-semibold mb-4 text-purple-400">🖼️ Pozadí</h3><div className="grid grid-cols-3 gap-2"><div onClick={() => setSessionSettings({ ...sessionSettings, selectedBg: null })} className={`aspect-video bg-slate-900 border-2 rounded cursor-pointer flex items-center justify-center text-xs ${sessionSettings.selectedBg === null ? 'border-purple-500' : 'border-slate-700'}`}>Nic</div>{assets.filter(a => a.type === 'BACKGROUND').map(a => (<img key={a.id} src={a.url} onClick={() => setSessionSettings({ ...sessionSettings, selectedBg: a.url })} className={`w-full aspect-video object-cover rounded border-2 cursor-pointer ${sessionSettings.selectedBg === a.url ? 'border-purple-500' : 'border-slate-700'}`} />))}</div></div>
-                                        <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl"><h3 className="font-semibold mb-4 text-pink-400">🦄 Samolepka</h3><div className="grid grid-cols-4 gap-2"><div onClick={() => setSessionSettings({ ...sessionSettings, selectedSticker: null })} className="aspect-square bg-slate-900 border-2 border-slate-700 rounded cursor-pointer flex items-center justify-center text-xs">Nic</div>{assets.filter(a => a.type === 'STICKER').map(a => (<img key={a.id} src={a.url} onClick={() => setSessionSettings({ ...sessionSettings, selectedSticker: a.url })} className={`w-full aspect-square object-contain bg-slate-900 rounded border-2 cursor-pointer ${sessionSettings.selectedSticker === a.url ? 'border-pink-500' : 'border-slate-700'}`} />))}</div></div>
+
+                                    {/* 2. GRAPHICS (Existing Logic) */}
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                        <div className="space-y-6">
+                                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
+                                                <h3 className="font-semibold mb-4 text-green-400 flex items-center gap-2"><Pipette size={18} /> Green Screen</h3>
+                                                <div className="mb-4 relative rounded-lg overflow-hidden border border-slate-600 bg-black aspect-video group">
+                                                    <LiveView streamUrl={finalStreamUrl} isBW={sessionSettings.isBW} onClick={handlePreviewClick} className={`w-full h-full object-cover ${isPickingColor ? 'cursor-crosshair' : ''}`} printWidth={sessionSettings.printWidth} printHeight={sessionSettings.printHeight} />
+                                                    {isPickingColor && <div className="absolute inset-0 bg-green-500/20 pointer-events-none flex items-center justify-center text-green-300 font-bold border-4 border-green-500 animate-pulse">KLIKNI KAMKOLIV</div>}
+                                                    <div className="absolute bottom-2 right-2"><button onClick={() => setIsPickingColor(!isPickingColor)} className={`p-2 rounded-full shadow-lg flex items-center gap-2 text-xs font-bold ${isPickingColor ? 'bg-green-500 text-black' : 'bg-white text-black'}`}><MousePointer2 size={16} /> Kapátko</button></div>
+                                                </div>
+                                                <div className="flex items-center justify-between"><span>Tolerance</span><input type="range" min="10" max="250" value={sessionSettings.chromaTolerance} onChange={e => setSessionSettings({ ...sessionSettings, chromaTolerance: Number(e.target.value) })} className="w-32 accent-green-500 h-2 bg-slate-900 rounded-lg appearance-none cursor-pointer" /></div>
+                                            </div>
+                                            <div className="p-5 bg-slate-800 border-slate-700 border rounded-xl flex justify-between items-center"><span className="font-semibold">Černobíle</span><div onClick={() => setSessionSettings(s => ({ ...s, isBW: !s.isBW }))} className={`w-14 h-8 rounded-full p-1 cursor-pointer transition-colors ${sessionSettings.isBW ? 'bg-indigo-600' : 'bg-slate-700'}`}><div className={`w-6 h-6 bg-white rounded-full transition-transform ${sessionSettings.isBW ? 'translate-x-6' : ''}`}></div></div></div>
+                                        </div>
+
+                                        <div className="space-y-6">
+                                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl"><h3 className="font-semibold mb-4 text-purple-400">🖼️ Pozadí</h3><div className="grid grid-cols-3 gap-2"><div onClick={() => setSessionSettings({ ...sessionSettings, selectedBg: null })} className={`aspect-video bg-slate-900 border-2 rounded cursor-pointer flex items-center justify-center text-xs ${sessionSettings.selectedBg === null ? 'border-purple-500' : 'border-slate-700'}`}>Nic</div>{assets.filter(a => a.type === 'BACKGROUND').map(a => (<img key={a.id} src={a.url} onClick={() => setSessionSettings({ ...sessionSettings, selectedBg: a.url })} className={`w-full aspect-video object-cover rounded border-2 cursor-pointer ${sessionSettings.selectedBg === a.url ? 'border-purple-500' : 'border-slate-700'}`} />))}</div></div>
+                                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl"><h3 className="font-semibold mb-4 text-pink-400">🦄 Samolepka</h3><div className="grid grid-cols-4 gap-2"><div onClick={() => setSessionSettings({ ...sessionSettings, selectedSticker: null })} className="aspect-square bg-slate-900 border-2 border-slate-700 rounded cursor-pointer flex items-center justify-center text-xs">Nic</div>{assets.filter(a => a.type === 'STICKER').map(a => (<img key={a.id} src={a.url} onClick={() => setSessionSettings({ ...sessionSettings, selectedSticker: a.url })} className={`w-full aspect-square object-contain bg-slate-900 rounded border-2 cursor-pointer ${sessionSettings.selectedSticker === a.url ? 'border-pink-500' : 'border-slate-700'}`} />))}</div></div>
+                                        </div>
                                     </div>
                                 </div>
                             )}
-                            {activeTab === 'admin' && (/* ... ADMIN SETTINGS ... */
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="p-6 bg-slate-800 border border-slate-700 rounded-xl"><div className="flex justify-between mb-4"><h3 className="font-bold flex gap-2"><Cloud size={20} className="text-blue-400" /> Web Stream</h3><button onClick={() => activePort ? setCloudStreamEnabled(!cloudStreamEnabled) : showToast('Žádná kamera!')} className={`px-4 py-1 rounded text-xs font-bold ${cloudStreamEnabled ? 'bg-blue-600' : 'bg-slate-700'}`}>{cloudStreamEnabled ? 'ON' : 'OFF'}</button></div><div className="bg-black p-4 rounded text-xs font-mono h-32 overflow-y-auto border border-slate-700 text-slate-300">{streamLog.map((l, i) => <div key={i}>{l}</div>)}</div></div>
-                                    <div className="p-6 bg-slate-800 border border-slate-700 rounded-xl space-y-4">
-                                        <h3 className="font-bold flex gap-2"><Terminal size={20} className="text-yellow-400" /> Nastavení</h3>
-                                        <div className="flex justify-between p-2 bg-slate-900 rounded border border-slate-700"><span className="text-sm">IP Kamery</span><input className="bg-transparent text-right outline-none text-yellow-400 w-32" value={cameraIp} onChange={e => { setCameraIp(e.target.value); localStorage.setItem('camera_ip', e.target.value); }} /></div>
-                                        <div className="flex justify-between p-2 bg-slate-900 rounded border border-slate-700"><span className="text-sm">Port (Shoot)</span><input type="number" className="bg-transparent text-right outline-none text-yellow-400 w-20" value={sessionSettings.commandPort} onChange={e => { const v = Number(e.target.value); setSessionSettings(s => ({ ...s, commandPort: v })); localStorage.setItem('tech_cmd_port', String(v)); }} /></div>
-                                        <div className="flex justify-between p-2 bg-slate-900 rounded border border-slate-700">
-                                            <span className="text-sm">Rozměr tisku (mm)</span>
-                                            <input
-                                                className="bg-transparent text-right outline-none text-yellow-400 w-32 font-mono"
-                                                defaultValue={`${sessionSettings.printWidth}x${sessionSettings.printHeight}`}
-                                                onBlur={e => {
-                                                    const parts = e.target.value.toLowerCase().split('x');
-                                                    if (parts.length === 2) {
-                                                        const w = Number(parts[0].trim());
-                                                        const h = Number(parts[1].trim());
-                                                        if (!isNaN(w) && !isNaN(h)) {
-                                                            setSessionSettings(s => ({ ...s, printWidth: w, printHeight: h }));
-                                                            showToast(`Tisk: ${w}x${h}mm`);
-                                                        }
-                                                    }
-                                                }}
-                                                onKeyDown={e => {
-                                                    if (e.key === 'Enter') e.currentTarget.blur();
-                                                }}
-                                                placeholder="150x100"
-                                            />
-                                        </div>
-                                        <button onClick={() => restartLiveView()} className="w-full py-2 bg-yellow-600 hover:bg-yellow-700 rounded font-bold text-sm shadow-lg flex items-center justify-center gap-2 transition-colors"><RefreshCw size={16} /> Restart LiveView</button>
-                                    </div>
-                                    <div className="md:col-span-2 p-6 bg-slate-800 border border-slate-700 rounded-xl space-y-2"><h3 className="font-bold flex gap-2 text-green-400"><FolderOpen size={20} /> Cesta k fotkám</h3><input className="w-full bg-slate-900 p-3 rounded border border-slate-700 font-mono text-sm" value={sessionSettings.localPhotoPath} onChange={e => { setSessionSettings(s => ({ ...s, localPhotoPath: e.target.value })); localStorage.setItem('tech_photo_path', e.target.value); }} /><p className="text-xs text-slate-500">Nastavte stejnou cestu i v DigicamControl.</p></div>
-                                    <div className="md:col-span-2 p-6 bg-slate-800 border border-slate-700 rounded-xl flex justify-between items-center"><span className="text-slate-300 font-bold flex gap-2"><Mail size={20} className="text-indigo-400" /> Admin Email</span><input className="bg-slate-900 p-2 rounded border border-slate-700 w-64 text-sm" placeholder="admin@fotobudka.cz" value={sessionSettings.email} onChange={e => setSessionSettings(s => ({ ...s, email: e.target.value }))} /></div>
 
-                                    {/* SMTP CONFIGURATION */}
-                                    <div className="md:col-span-2 p-6 bg-slate-800 border border-slate-700 rounded-xl space-y-4">
-                                        <h3 className="font-bold flex gap-2 text-indigo-400"><Mail size={20} /> Nastavení Emailu (SMTP)</h3>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="space-y-1"><label className="text-xs text-slate-500">SMTP Host</label><input className="w-full bg-slate-900 p-2 rounded border border-slate-700 text-sm" placeholder="smtp.gmail.com" value={sessionSettings.smtp?.host || ''} onChange={e => updateSmtp('host', e.target.value)} /></div>
-                                            <div className="space-y-1"><label className="text-xs text-slate-500">Port</label><input className="w-full bg-slate-900 p-2 rounded border border-slate-700 text-sm" placeholder="465" value={sessionSettings.smtp?.port || ''} onChange={e => updateSmtp('port', e.target.value)} /></div>
-                                            <div className="space-y-1"><label className="text-xs text-slate-500">Uživatel</label><input className="w-full bg-slate-900 p-2 rounded border border-slate-700 text-sm" placeholder="vas.email@gmail.com" value={sessionSettings.smtp?.user || ''} onChange={e => updateSmtp('user', e.target.value)} /></div>
-                                            <div className="space-y-1">
-                                                <label className="text-xs text-slate-500">Heslo</label>
-                                                <input type="password" className="w-full bg-slate-900 p-2 rounded border border-slate-700 text-sm" placeholder="16-místné heslo aplikace" value={sessionSettings.smtp?.pass || ''} onChange={e => updateSmtp('pass', e.target.value)} />
+                            {/* === TECH TAB (ADMIN) === */}
+                            {activeTab === 'admin' && (
+                                <>
+                                    {!techAuth ? (
+                                        <div className="flex flex-col items-center justify-center h-full space-y-6">
+                                            <Lock size={64} className="text-red-500 mb-4" />
+                                            <h3 className="text-2xl font-bold">Technická sekce</h3>
+                                            <p className="text-slate-400">Zadejte heslo pro přístup k nastavení systému.</p>
+                                            <div className="flex gap-4">
+                                                <input
+                                                    type="password"
+                                                    autoFocus
+                                                    value={techPasswordInput}
+                                                    onChange={e => setTechPasswordInput(e.target.value)}
+                                                    className="bg-slate-950 border border-slate-700 rounded-xl p-4 text-center text-xl outline-none focus:border-red-500 w-64"
+                                                    placeholder="******"
+                                                />
+                                                <button
+                                                    onClick={() => { if (techPasswordInput === 'Starter123') setTechAuth(true); else showToast('Špatné heslo!'); }}
+                                                    className="bg-red-600 hover:bg-red-500 px-6 rounded-xl font-bold"
+                                                >
+                                                    Odemknout
+                                                </button>
                                             </div>
                                         </div>
-                                        <div className="space-y-1">
-                                            <p className="text-[10px] text-slate-400">💡 <strong>Gmail:</strong> Musíte použít "Heslo aplikace" (ne vaše běžné heslo). <br />Jděte na: Google Účet {'>'} Zabezpečení {'>'} Dvoufázové ověření {'>'} Hesla aplikací.</p>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-slate-950/50 p-2 rounded">
-                                            <p className="text-xs text-slate-500">Změny se ukládají automaticky.</p>
-                                            <button onClick={async () => {
-                                                try {
-                                                    const res = await fetch('/api/email', { method: 'POST', body: JSON.stringify({ email: sessionSettings.smtp?.user, isTest: true }) });
-                                                    const d = await res.json();
-                                                    if (d.success) showToast('Test OK ✅'); else showToast('Chyba: ' + d.error);
-                                                } catch (e) { showToast('Chyba spojení'); }
-                                            }} className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-bold">Odeslat test</button>
-                                        </div>
-                                    </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-4">
+                                            <div className="p-6 bg-slate-800 border border-slate-700 rounded-xl"><div className="flex justify-between mb-4"><h3 className="font-bold flex gap-2"><Cloud size={20} className="text-blue-400" /> Web Stream</h3><button onClick={() => activePort ? setCloudStreamEnabled(!cloudStreamEnabled) : showToast('Žádná kamera!')} className={`px-4 py-1 rounded text-xs font-bold ${cloudStreamEnabled ? 'bg-blue-600' : 'bg-slate-700'}`}>{cloudStreamEnabled ? 'ON' : 'OFF'}</button></div><div className="bg-black p-4 rounded text-xs font-mono h-32 overflow-y-auto border border-slate-700 text-slate-300">{streamLog.map((l, i) => <div key={i}>{l}</div>)}</div></div>
+                                            <div className="p-6 bg-slate-800 border border-slate-700 rounded-xl space-y-4">
+                                                <h3 className="font-bold flex gap-2"><Terminal size={20} className="text-yellow-400" /> Nastavení</h3>
+                                                <div className="flex justify-between p-2 bg-slate-900 rounded border border-slate-700"><span className="text-sm">IP Kamery</span><input className="bg-transparent text-right outline-none text-yellow-400 w-32" value={cameraIp} onChange={e => { setCameraIp(e.target.value); localStorage.setItem('camera_ip', e.target.value); }} /></div>
+                                                <div className="flex justify-between p-2 bg-slate-900 rounded border border-slate-700"><span className="text-sm">Port (Shoot)</span><input type="number" className="bg-transparent text-right outline-none text-yellow-400 w-20" value={sessionSettings.commandPort} onChange={e => { const v = Number(e.target.value); setSessionSettings(s => ({ ...s, commandPort: v })); localStorage.setItem('tech_cmd_port', String(v)); }} /></div>
+                                                <div className="flex justify-between p-2 bg-slate-900 rounded border border-slate-700">
+                                                    <span className="text-sm">Rozměr tisku (mm)</span>
+                                                    <input
+                                                        className="bg-transparent text-right outline-none text-yellow-400 w-32 font-mono"
+                                                        defaultValue={`${sessionSettings.printWidth}x${sessionSettings.printHeight}`}
+                                                        onBlur={e => {
+                                                            const parts = e.target.value.toLowerCase().split('x');
+                                                            if (parts.length === 2) {
+                                                                const w = Number(parts[0].trim());
+                                                                const h = Number(parts[1].trim());
+                                                                if (!isNaN(w) && !isNaN(h)) {
+                                                                    setSessionSettings(s => ({ ...s, printWidth: w, printHeight: h }));
+                                                                    showToast(`Tisk: ${w}x${h}mm`);
+                                                                }
+                                                            }
+                                                        }}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Enter') e.currentTarget.blur();
+                                                        }}
+                                                        placeholder="150x100"
+                                                    />
+                                                </div>
+                                                <button onClick={() => restartLiveView()} className="w-full py-2 bg-yellow-600 hover:bg-yellow-700 rounded font-bold text-sm shadow-lg flex items-center justify-center gap-2 transition-colors"><RefreshCw size={16} /> Restart LiveView</button>
+                                            </div>
+                                            <div className="md:col-span-2 p-6 bg-slate-800 border border-slate-700 rounded-xl space-y-2"><h3 className="font-bold flex gap-2 text-green-400"><FolderOpen size={20} /> Cesta k fotkám</h3><input className="w-full bg-slate-900 p-3 rounded border border-slate-700 font-mono text-sm" value={sessionSettings.localPhotoPath} onChange={e => { setSessionSettings(s => ({ ...s, localPhotoPath: e.target.value })); localStorage.setItem('tech_photo_path', e.target.value); }} /><p className="text-xs text-slate-500">Nastavte stejnou cestu i v DigicamControl.</p></div>
+                                            <div className="md:col-span-2 p-6 bg-slate-800 border border-slate-700 rounded-xl flex justify-between items-center"><span className="text-slate-300 font-bold flex gap-2"><Mail size={20} className="text-indigo-400" /> Admin Email</span><input className="bg-slate-900 p-2 rounded border border-slate-700 w-64 text-sm" placeholder="admin@fotobudka.cz" value={sessionSettings.email} onChange={e => setSessionSettings(s => ({ ...s, email: e.target.value }))} /></div>
 
-                                    <div className="md:col-span-2 flex justify-end gap-4 p-6">
-                                        <button onClick={() => window.close()} className="px-6 py-2 bg-red-900/50 hover:bg-red-900 text-red-200 rounded font-bold transition-colors">Zavřít Aplikaci</button>
-                                    </div>
-                                </div>
+                                            {/* SMTP CONFIGURATION */}
+                                            <div className="md:col-span-2 p-6 bg-slate-800 border border-slate-700 rounded-xl space-y-4">
+                                                <h3 className="font-bold flex gap-2 text-indigo-400"><Mail size={20} /> Nastavení Emailu (SMTP)</h3>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="space-y-1"><label className="text-xs text-slate-500">SMTP Host</label><input className="w-full bg-slate-900 p-2 rounded border border-slate-700 text-sm" placeholder="smtp.gmail.com" value={sessionSettings.smtp?.host || ''} onChange={e => updateSmtp('host', e.target.value)} /></div>
+                                                    <div className="space-y-1"><label className="text-xs text-slate-500">Port</label><input className="w-full bg-slate-900 p-2 rounded border border-slate-700 text-sm" placeholder="465" value={sessionSettings.smtp?.port || ''} onChange={e => updateSmtp('port', e.target.value)} /></div>
+                                                    <div className="space-y-1"><label className="text-xs text-slate-500">Uživatel</label><input className="w-full bg-slate-900 p-2 rounded border border-slate-700 text-sm" placeholder="vas.email@gmail.com" value={sessionSettings.smtp?.user || ''} onChange={e => updateSmtp('user', e.target.value)} /></div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-xs text-slate-500">Heslo</label>
+                                                        <input type="password" className="w-full bg-slate-900 p-2 rounded border border-slate-700 text-sm" placeholder="16-místné heslo aplikace" value={sessionSettings.smtp?.pass || ''} onChange={e => updateSmtp('pass', e.target.value)} />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <p className="text-[10px] text-slate-400">💡 <strong>Gmail:</strong> Musíte použít "Heslo aplikace" (ne vaše běžné heslo). <br />Jděte na: Google Účet {'>'} Zabezpečení {'>'} Dvoufázové ověření {'>'} Hesla aplikací.</p>
+                                                </div>
+                                                <div className="flex justify-between items-center bg-slate-950/50 p-2 rounded">
+                                                    <p className="text-xs text-slate-500">Změny se ukládají automaticky.</p>
+                                                    <button onClick={async () => {
+                                                        try {
+                                                            const res = await fetch('/api/email', { method: 'POST', body: JSON.stringify({ email: sessionSettings.smtp?.user, isTest: true }) });
+                                                            const d = await res.json();
+                                                            if (d.success) showToast('Test OK ✅'); else showToast('Chyba: ' + d.error);
+                                                        } catch (e) { showToast('Chyba spojení'); }
+                                                    }} className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-xs font-bold">Odeslat test</button>
+                                                </div>
+                                            </div>
+
+                                            <div className="md:col-span-2 flex justify-end gap-4 p-6">
+                                                <button onClick={() => window.close()} className="px-6 py-2 bg-red-900/50 hover:bg-red-900 text-red-200 rounded font-bold transition-colors">Zavřít Aplikaci</button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>

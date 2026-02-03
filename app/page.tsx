@@ -1,6 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { Camera, Image as ImageIcon, User, Sparkles } from 'lucide-react';
+import { Camera, Image as ImageIcon, User, Sparkles, Settings } from 'lucide-react';
 
 export default function Home() {
   return (
@@ -64,14 +64,14 @@ export default function Home() {
           </div>
         </Link>
 
-        {/* Card 4: Profil */}
+        {/* Card 4: Nastavení (dříve Profil) */}
         <Link href="/profile" className="group">
           <div className="glass glass-hover h-64 rounded-3xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 relative overflow-hidden">
             <div className="bg-slate-800/50 p-6 rounded-full mb-6 group-hover:scale-110 transition-transform duration-300 shadow-xl border border-white/10">
-              <User size={40} className="text-emerald-400" />
+              <Settings size={40} className="text-emerald-400" />
             </div>
-            <h2 className="text-2xl font-bold mb-2">Profil</h2>
-            <p className="text-sm text-slate-400">Nastavení a Email</p>
+            <h2 className="text-2xl font-bold mb-2">Nastavení</h2>
+            <p className="text-sm text-slate-400">Správa událostí a systému</p>
           </div>
         </Link>
 
