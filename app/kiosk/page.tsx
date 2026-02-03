@@ -310,6 +310,7 @@ export default function KioskPage() {
     // --- EVENT LOGIC ---
     const [events, setEvents] = useState<any[]>([]);
     const [newEventName, setNewEventName] = useState('');
+    const [newEventPassword, setNewEventPassword] = useState('');
 
     // Tech Auth for Modal
     const [techAuth, setTechAuth] = useState(false);
@@ -340,12 +341,13 @@ export default function KioskPage() {
             const res = await fetch('/api/event', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: newEventName, makeActive: true })
+                body: JSON.stringify({ name: newEventName, password: newEventPassword, makeActive: true })
             });
             const d = await res.json();
             if (d.success) {
                 showToast('Vytvořeno & Aktivní ✅');
                 setNewEventName('');
+                setNewEventPassword('');
                 loadEvents();
             } else showToast('Chyba: ' + d.error);
         } catch (e) { showToast('Chyba vytvoření'); }
