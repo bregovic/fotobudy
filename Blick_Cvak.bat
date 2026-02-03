@@ -6,7 +6,7 @@ cls
 
 echo.
 echo  =============================================================
-echo     B L I C K   &   C V A K   -   L O K A L N I   A P L I K A C E
+echo     B L I C K   ^&   C V A K   -   L O K A L N I   A P L I K A C E
 echo  =============================================================
 echo.
 echo   Startuji lokalni server (rychlejsi) + DigicamControl...

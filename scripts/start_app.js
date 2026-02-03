@@ -16,6 +16,25 @@ console.log('║       🎯 BLICK & CVAK - UNIFIED LAUNCHER                 ║'
 console.log('╚══════════════════════════════════════════════════════════╝');
 console.log('');
 
+// 0. CLEANUP: Kill zombie processes on ports 3000 & 5555
+console.log('🧹 [0/4] Čištění portů (3000, 5555)...');
+try {
+    const killScript = `
+        $ports = @(3000, 5555);
+        foreach ($port in $ports) {
+            $pids = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique;
+            if ($pids) { 
+                Stop-Process -Id $pids -Force -ErrorAction SilentlyContinue; 
+                Write-Host "Killed process on port $port"; 
+            }
+        }
+    `;
+    require('child_process').execSync(`powershell -Command "${killScript.replace(/\r?\n/g, ' ')}"`, { stdio: 'ignore' });
+    console.log('      ✅ Porty vyčištěny');
+} catch (e) {
+    console.log('      ⚠️  Nepodařilo se vyčistit porty (možná byly volné)');
+}
+
 // 1. Spustit DigicamControl (jediné oddělené okno)
 console.log('📷 [1/4] Startuji DigicamControl...');
 if (fs.existsSync(DIGICAM_PATH)) {
@@ -25,6 +44,7 @@ if (fs.existsSync(DIGICAM_PATH)) {
         windowsHide: false  // DCC potřebuje své okno
     }).unref();
     console.log('      ✅ DigicamControl spuštěn');
+
 } else {
     console.log('      ℹ️  DigicamControl nenalezen (možná již běží)');
 }
@@ -75,11 +95,11 @@ console.log('');
 // Spustit Next.js pomocí exec (lépe zvládá .cmd na Windows)
 const { execSync, exec: execCallback } = require('child_process');
 
-// Spustit Next.js server
-const serverProcess = require('child_process').spawn('cmd.exe', ['/c', 'npx next dev -p ' + LOCAL_PORT], {
+// Spustit Next.js server pomocí npm (spolehlivější než npx)
+const serverProcess = require('child_process').spawn('cmd.exe', ['/c', 'npm run dev -- -p ' + LOCAL_PORT], {
     stdio: 'inherit',
     cwd: process.cwd(),
-    windowsHide: false  // Musí být false aby fungovalo stdio: inherit
+    windowsHide: false
 });
 
 serverProcess.on('error', (err) => {
@@ -97,7 +117,9 @@ function checkServer() {
             console.log('');
             console.log('─────────────────────────────────────────────────────────────');
             console.log('');
-            console.log('✅ VŠE BĚŽÍ!');
+            console.log('✅ VŠE BĚŽÍ! Server je připraven.');
+            console.log('   -> Kiosk: http://localhost:' + LOCAL_PORT + '/kiosk');
+            console.log('   -> Remote: http://localhost:' + LOCAL_PORT + '/remote');
             openChromeApp();
         } else if (!serverReady) {
             setTimeout(checkServer, 1000);
@@ -113,8 +135,8 @@ function openChromeApp() {
         (fs.existsSync(CHROME_PATH_2) ? CHROME_PATH_2 : null);
 
     if (chromePath) {
-        console.log('🚀 Spouštím Chrome Kiosk...');
-
+        console.log('');
+        console.log('🚀 OTEVÍRÁM KIOSK (Chrome)...');
         spawn(chromePath, [
             `--app=${KIOSK_URL}`,
             '--start-maximized',
@@ -124,21 +146,13 @@ function openChromeApp() {
             '--user-data-dir=C:\\Temp\\BlickCvakKiosk'
         ], {
             detached: true,
-            stdio: 'ignore',
-            windowsHide: true
+            stdio: 'ignore'
         }).unref();
 
-        console.log('');
         console.log('╔══════════════════════════════════════════════════════════╗');
         console.log('║   🎉 BLICK & CVAK BĚŽÍ                                   ║');
-        console.log('║                                                          ║');
-        console.log('║   📍 Kiosk:  http://localhost:' + LOCAL_PORT + '/kiosk                 ║');
-        console.log('║   📍 Bridge: http://localhost:5555                       ║');
-        console.log('║                                                          ║');
         console.log('║   💡 Toto okno nechte otevřené.                          ║');
-        console.log('║   💡 Pro ukončení stiskněte Ctrl+C nebo zavřete okno.    ║');
         console.log('╚══════════════════════════════════════════════════════════╝');
-        console.log('');
     } else {
         console.error('❌ Chrome nenalezen! Otevřete: ' + KIOSK_URL);
     }

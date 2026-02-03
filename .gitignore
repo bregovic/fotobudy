@@ -51,3 +51,5 @@ sync_map.json
 
 # Local settings (contains credentials)
 settings.json
+
+debug_watcher.txt

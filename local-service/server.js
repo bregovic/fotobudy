@@ -14,8 +14,14 @@ app.use(cors());
 app.use(express.json());
 
 // --- KONFIGURACE ---
-const DCC_API_URL = 'http://127.0.0.1:5520/?CMD=Capture';
-const LIVE_VIEW_URL = 'http://127.0.0.1:5566/'; // Optimizer URL
+const DCC_HOST = '127.0.0.1';
+const CANDIDATE_PORTS = [5513, 5520, 5514, 5599];
+let dccPort = 5513; // Start with default, auto-rotate on error
+
+// --- KONFIGURACE ---
+// Dynamic URL getter
+const getDccApiUrl = () => `http://${DCC_HOST}:${dccPort}/?CMD=Capture`;
+
 const SAVE_DIR = path.join(process.cwd(), 'public', 'photos');
 const LOCAL_ONLY = true;
 
@@ -29,15 +35,19 @@ app.use('/photos', express.static(SAVE_DIR));
 // Instead of every client hitting DCC, we poll once and serve many
 let latestFrame = null;
 let lastFrameTime = 0;
+let isReviewing = false;
 
 function startCameraPolling() {
-    console.log('[POLLER] Starting centralized camera polling...');
+    console.log(`[POLLER] Starting smart camera polling (trying ${CANDIDATE_PORTS.join(', ')})...`);
 
     const poll = () => {
-        // Fetch from DCC Raw (most reliable)
-        http.get('http://127.0.0.1:5520/liveview.jpg', (res) => {
+        if (isReviewing) { setTimeout(poll, 200); return; }
+
+        // Fetch from DCC Raw (most reliable) - WITH TIMEOUT
+        const liveViewUrl = `http://${DCC_HOST}:${dccPort}/liveview.jpg`;
+        const req = http.get(liveViewUrl, (res) => {
             if (res.statusCode !== 200) {
-                res.resume();
+                res.resume(); // consume body to free memory
                 setTimeout(poll, 1000); // Retry slow if error
                 return;
             }
@@ -52,9 +62,21 @@ function startCameraPolling() {
                 }
                 setTimeout(poll, 50); // ~20 FPS target
             });
-        }).on('error', (e) => {
-            // console.error('[POLLER] Error:', e.message); // Too noisy
-            setTimeout(poll, 1000);
+        });
+
+        req.on('error', (e) => {
+            // Switch port on error
+            const currentIdx = CANDIDATE_PORTS.indexOf(dccPort);
+            const nextIdx = (currentIdx + 1) % CANDIDATE_PORTS.length;
+            dccPort = CANDIDATE_PORTS[nextIdx];
+
+            // console.log(`[POLLER] Port ${CANDIDATE_PORTS[currentIdx]} failed, trying ${dccPort}...`);
+            setTimeout(poll, 500);
+        });
+
+        // CRITICAL FIX: Timeout hangs
+        req.setTimeout(500, () => {
+            req.destroy(); // This triggers 'error' event above
         });
     };
     poll();
@@ -138,7 +160,7 @@ function performCapture() {
 
     try {
         // Trigger Camera via DCC
-        http.get(DCC_API_URL, (dccRes) => {
+        http.get(getDccApiUrl(), (dccRes) => {
             if (dccRes.statusCode < 200 || dccRes.statusCode > 299) {
                 console.error(`[BRIDGE] DCC Error ${dccRes.statusCode}`);
             }
@@ -155,19 +177,26 @@ function performCapture() {
 }
 
 // STARTUP: FORCE LIVE VIEW ON
-setTimeout(() => {
-    console.log('[INIT] Sending Auto LiveAPI Trigger...');
-    http.get('http://127.0.0.1:5520/?cmd=LiveView_Show', (res) => {
-        // We expect this might fail if DCC is still showing the dialog, but we try anyway
-        console.log('[INIT] LiveView Trigger Sent.');
-        res.resume();
-    }).on('error', () => console.log('[INIT] LiveView Trigger - DCC not ready yet.'));
+// --- AUTO-HEAL LIVE VIEW ---
+// Keeps trying to enable Live View until we see fresh frames
+let failedAttempts = 0;
+setInterval(() => {
+    // If we have a fresh frame (less than 5s old) OR we are intentionally reviewing, we are good.
+    if ((lastFrameTime > 0 && Date.now() - lastFrameTime < 5000) || isReviewing) {
+        failedAttempts = 0;
+        return;
+    }
 
-    // Try again in 10s just in case
-    setTimeout(() => {
-        http.get('http://127.0.0.1:5520/?cmd=LiveView_Show').on('error', () => { });
-    }, 10000);
-}, 5000);
+    failedAttempts++;
+    if (failedAttempts % 10 === 1) { // Log only 1st, 11th, 21st... time
+        console.log(`[AUTO-HEAL] No Live View signal on port ${dccPort}. Sending Wake-Up command... (Silent retry)`);
+    }
+
+    http.get(`http://127.0.0.1:${dccPort}/?cmd=LiveView_Show`, (res) => {
+        res.resume(); // consume body
+    }).on('error', () => { /* Suppress connection errors (DCC might be closed) */ });
+
+}, 5000); // Check every 5 seconds
 
 // --- CLOUD STREAM UPLOAD LOOP ---
 // Reads from SHAARED BUFFER
@@ -257,6 +286,13 @@ function startBackgroundProcessing() {
                     fs.unlinkSync(tempPath);
 
                     console.log(`[BG] Created web version: ${destPath}`);
+
+                    // INJECT REVIEW FRAME INTO STREAM
+                    try {
+                        latestFrame = fs.readFileSync(destPath);
+                        isReviewing = true;
+                        setTimeout(() => isReviewing = false, 2000);
+                    } catch (e) { console.error("Preview inject failed", e); }
 
                 } catch (e) {
                     console.error(`[BG] Error processing ${textFile}:`, e.message);

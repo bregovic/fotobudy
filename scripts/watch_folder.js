@@ -72,6 +72,10 @@ function startWatching() {
 
 // Funkce pro zpracování souboru
 function handleFileDetect(filePath) {
+    // IGNORE OUTPUT DIRECTORY (prevents infinite loop)
+    const OUTPUT_DIR = path.resolve(__dirname, '..', 'public', 'photos');
+    if (path.resolve(filePath).startsWith(OUTPUT_DIR)) return;
+
     const key = getLockKey(filePath);
 
     // STRICT LOCK

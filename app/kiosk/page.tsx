@@ -136,19 +136,17 @@ const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail
             {/* Grid */}
             <div className="flex-1 overflow-y-auto p-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {photos.map((p: any, idx: number) => (
-                    <div key={p.id} className={`relative w-full pb-[66.66%] bg-slate-900 rounded-xl overflow-hidden group transition-all duration-200 border border-slate-800 hover:shadow-xl hover:scale-[1.02] ${selectedIds.includes(p.id) ? 'ring-4 ring-indigo-500 scale-[1.02]' : ''}`}>
+                    <div key={p.id} onClick={() => setViewPhotoIndex(idx)} className={`relative w-full pb-[66.66%] bg-slate-900 rounded-xl overflow-hidden group transition-all duration-200 border border-slate-800 hover:shadow-xl hover:scale-[1.02] cursor-pointer ${selectedIds.includes(p.id) ? 'ring-4 ring-indigo-500 scale-[1.02]' : ''}`}>
                         {/* Image - absolute to fill the aspect-ratio container */}
                         <img src={p.url} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
 
-                        {/* Overlay Actions */}
-                        <div className={`absolute inset-0 bg-black/40 transition-opacity flex items-center justify-center gap-4 ${selectedIds.includes(p.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                            <button onClick={(e) => { e.stopPropagation(); onToggle(p.id); }} className={`p-3 rounded-full transition-transform hover:scale-110 ${selectedIds.includes(p.id) ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white/20 hover:bg-white/40 text-white'}`}>
-                                {selectedIds.includes(p.id) ? <CheckCircle2 size={32} /> : <div className="w-8 h-8 rounded-full border-2 border-white/80" />}
-                            </button>
-                            <button onClick={(e) => { e.stopPropagation(); setViewPhotoIndex(idx); }} className="p-3 rounded-full bg-white/20 hover:bg-white/40 text-white transition-transform hover:scale-110">
-                                <MessageSquare size={32} />
-                            </button>
-                        </div>
+                        {/* Top-Right Checkbox */}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onToggle(p.id); }}
+                            className={`absolute top-2 right-2 p-2 rounded-full transition-all z-20 hover:scale-110 ${selectedIds.includes(p.id) ? 'bg-indigo-600 text-white shadow-lg' : 'bg-black/30 text-white/80 hover:bg-black/60 hover:text-white'}`}
+                        >
+                            {selectedIds.includes(p.id) ? <CheckCircle2 size={28} /> : <div className="w-7 h-7 rounded-full border-2 border-white/90" />}
+                        </button>
                     </div>
                 ))}
             </div>
