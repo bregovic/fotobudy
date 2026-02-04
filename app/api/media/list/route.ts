@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { prisma } from '../../../../lib/prisma';
@@ -7,19 +7,22 @@ export const dynamic = 'force-dynamic';
 
 const IS_CLOUD = !!process.env.RAILWAY_ENVIRONMENT_NAME;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
     try {
-        // 1. Get Active Event
-        const activeEvent = await prisma.event.findFirst({ where: { isActive: true } });
+        const { searchParams } = new URL(req.url);
+        const eventId = searchParams.get('eventId');
+
+        let targetEvent = null;
+
+        if (eventId) {
+            targetEvent = await prisma.event.findUnique({ where: { id: eventId } });
+        } else {
+            targetEvent = await prisma.event.findFirst({ where: { isActive: true } });
+        }
 
         // --- ☁️ CLOUD MODE (RAILWAY) ---
         if (IS_CLOUD) {
-            // Filter by Event ID if active, otherwise show all/none (or maybe default is show all?)
-            // User requirement: "V režimu focení bude umožněno zobrazovat vyfocené fotky z přiřazeného projektu"
-            // So if event is active, show ONLY that event. If no event, show what? maybe everything or nothing.
-            // Let's filter by event if exists.
-
-            const whereClause = activeEvent ? { eventId: activeEvent.id } : {};
+            const whereClause = targetEvent ? { eventId: targetEvent.id } : {};
 
             const medias = await prisma.media.findMany({
                 orderBy: { createdAt: 'desc' },
@@ -41,9 +44,9 @@ export async function GET() {
         let publicDir = path.join(process.cwd(), 'public', 'photos');
         let urlPrefix = '/photos/';
 
-        if (activeEvent?.slug) {
-            publicDir = path.join(publicDir, activeEvent.slug);
-            urlPrefix = `/photos/${activeEvent.slug}/`;
+        if (targetEvent?.slug) {
+            publicDir = path.join(publicDir, targetEvent.slug);
+            urlPrefix = `/photos/${targetEvent.slug}/`;
         }
 
         if (!fs.existsSync(publicDir)) return NextResponse.json([]);
@@ -53,9 +56,9 @@ export async function GET() {
                 const lower = f.toLowerCase();
                 const isWeb = lower.startsWith('web_');
                 const isEdited = lower.startsWith('edited_');
-                const isAutoPreview = lower.startsWith('web_dsc_');
+                // const isAutoPreview = lower.startsWith('web_dsc_');
 
-                return (isWeb || isEdited) && !isAutoPreview &&
+                return (isWeb || isEdited) &&
                     (lower.startsWith('print_') === false) &&
                     (lower.endsWith('.jpg') || lower.endsWith('.jpeg'));
             })
@@ -68,7 +71,7 @@ export async function GET() {
 
         const media = files.map(f => ({
             id: f.name,
-            url: `${urlPrefix}${f.name}`, // Append slug to URL if needed
+            url: `${urlPrefix}${f.name}`,
             createdAt: new Date(f.time)
         }));
 
