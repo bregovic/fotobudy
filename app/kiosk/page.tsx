@@ -947,38 +947,63 @@ export default function KioskPage() {
                             {activeTab === 'user' && (
                                 <div className="space-y-8">
                                     {/* 1. EVENT MANAGER */}
-                                    <div className="p-6 bg-slate-950 border border-indigo-500/30 rounded-2xl shadow-lg">
-                                        <h3 className="text-xl font-bold text-indigo-400 mb-4 flex items-center gap-2"><Calendar /> Správa Události</h3>
-
-                                        {/* Create */}
-                                        <div className="flex gap-4 mb-6">
-                                            <input
-                                                type="text"
-                                                value={newEventName}
-                                                onChange={(e) => setNewEventName(e.target.value)}
-                                                placeholder="Nová akce (např. Svatba Jana)"
-                                                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl p-4 text-lg focus:border-indigo-500 outline-none"
-                                            />
-                                            <button onClick={createEvent} className="bg-indigo-600 hover:bg-indigo-500 px-8 rounded-xl font-bold text-lg shadow-lg">Vytvořit</button>
+                                    <div className="p-6 bg-slate-950 border border-indigo-500/30 rounded-2xl shadow-lg space-y-6">
+                                        <h3 className="text-xl font-bold text-indigo-400 flex items-center gap-2"><Calendar /> Správa Události</h3>
+                                        
+                                        {/* ACTIVE EVENT SELECTOR (LOOKUP) */}
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Vyberte aktivní událost</label>
+                                            <div className="relative">
+                                                <select 
+                                                    className="w-full p-4 bg-slate-900 border border-indigo-500 rounded-xl text-lg font-bold text-white outline-none appearance-none cursor-pointer hover:bg-slate-800 transition-colors"
+                                                    onChange={(e) => {
+                                                        const id = e.target.value;
+                                                        const ev = events.find((x: any) => x.id === id);
+                                                        if (ev) activateEvent(ev.id, ev.name);
+                                                    }}
+                                                    value={events.find((e: any) => e.isActive)?.id || ''}
+                                                >
+                                                    <option value="" disabled>-- Vyberte událost --</option>
+                                                    {events.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((ev: any) => (
+                                                        <option key={ev.id} value={ev.id}>
+                                                            {ev.name} ({new Date(ev.createdAt).toLocaleDateString()})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-indigo-500">
+                                                    <ArrowRight size={20} className="rotate-90" />
+                                                </div>
+                                            </div>
+                                            <p className="text-xs text-slate-500">Tato událost bude použita pro ukládání fotek a galerii.</p>
                                         </div>
 
-                                        {/* List */}
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-48 overflow-y-auto p-2">
-                                            {events.map((ev: any) => (
-                                                <div key={ev.id} className={`p-3 rounded-lg border flex justify-between items-center ${ev.isActive ? 'bg-indigo-900/40 border-indigo-500' : 'bg-slate-900 border-slate-800'}`}>
-                                                    <div className="truncate pr-2">
-                                                        <div className="font-bold text-sm">{ev.name}</div>
-                                                        <div className="text-[10px] text-slate-500 truncate">{ev.slug}</div>
-                                                    </div>
-                                                    {ev.isActive ?
-                                                        <span className="text-indigo-400 text-xs font-bold whitespace-nowrap">✅ Aktivní</span> :
-                                                        <button onClick={() => activateEvent(ev.id, ev.name)} className="bg-slate-800 hover:bg-slate-700 text-xs px-3 py-1.5 rounded border border-slate-700">Aktivovat</button>
-                                                    }
-                                                </div>
-                                            ))}
+                                        <div className="w-full h-px bg-slate-800"></div>
+
+                                        {/* CREATE NEW */}
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Vytvořit novou</label>
+                                            <div className="flex flex-col md:flex-row gap-4">
+                                                <input 
+                                                    type="text" 
+                                                    value={newEventName}
+                                                    onChange={(e) => setNewEventName(e.target.value)}
+                                                    placeholder="Název (např. Svatba Jana)" 
+                                                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:border-indigo-500 outline-none transition-colors" 
+                                                />
+                                                <input 
+                                                    type="text" 
+                                                    value={newEventPassword}
+                                                    onChange={(e) => setNewEventPassword(e.target.value)}
+                                                    placeholder="Heslo (volitelné)" 
+                                                    className="w-full md:w-48 bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:border-indigo-500 outline-none transition-colors" 
+                                                />
+                                                <button onClick={createEvent} className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-xl font-bold shadow-lg transition-all active:scale-95 whitespace-nowrap">
+                                                    Vytvořit
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
-
+                                    
                                     {/* 2. GRAPHICS (Existing Logic) */}
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                         <div className="space-y-6">
