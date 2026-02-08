@@ -51,5 +51,13 @@ export async function GET(req: NextRequest) {
     const events = await prisma.event.findMany({
         orderBy: { createdAt: 'desc' }
     });
-    return NextResponse.json(events);
+
+    // Sanitizace hesel před odesláním na klienta
+    const safeEvents = events.map(e => ({
+        ...e,
+        hasPassword: !!e.password && e.password.length > 0,
+        password: undefined // Neodesílat heslo
+    }));
+
+    return NextResponse.json(safeEvents);
 }

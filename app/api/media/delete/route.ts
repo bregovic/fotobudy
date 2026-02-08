@@ -8,11 +8,15 @@ export async function POST(request: Request) {
         let idsToDelete: string[] = [];
 
         if (body.ids && Array.isArray(body.ids)) {
+            // TODO: If using IDs, we assume they are in the root 'photos' folder 
+            // OR we need to fetch the active event to know the sub-folder.
+            // For now, IDs are assumed to be filenames in the correct context or relative paths.
             idsToDelete = body.ids;
         } else if (body.url) {
-            // Extract filename from URL
-            const filename = body.url.split('/').pop();
-            if (filename) idsToDelete.push(filename);
+            // Extract relative path from URL
+            // URL is typically /photos/filename.jpg OR /photos/event-slug/filename.jpg
+            const relativePath = body.url.replace(/^\/photos\//, '');
+            if (relativePath) idsToDelete.push(decodeURIComponent(relativePath));
         }
 
         if (idsToDelete.length === 0) {
@@ -21,20 +25,25 @@ export async function POST(request: Request) {
 
         console.log(`[DELETE] Mažu ${idsToDelete.length} položek...`);
 
-        const publicDir = path.join(process.cwd(), 'public', 'photos');
+        const photosRoot = path.join(process.cwd(), 'public', 'photos');
         let deletedCount = 0;
 
-        for (const id of idsToDelete) {
-            // ID IS THE FILENAME in our new FS-only system
-            const filePath = path.join(publicDir, id);
+        for (const relativeId of idsToDelete) {
+            // relativeId can be "file.jpg" or "event/file.jpg"
+            const filePath = path.join(photosRoot, relativeId);
+
+            console.log(`   -> Mazání souboru: ${filePath}`); // Debug log
+
             if (fs.existsSync(filePath)) {
                 try {
                     fs.unlinkSync(filePath);
-                    console.log(`   -> Smazáno: ${id}`);
+                    console.log(`   -> Smazáno: ${relativeId}`);
                     deletedCount++;
                 } catch (e) {
-                    console.error(`   -> Chyba mazání ${id}:`, e);
+                    console.error(`   -> Chyba mazání ${relativeId}:`, e);
                 }
+            } else {
+                console.warn(`   -> Soubor neexistuje: ${filePath}`);
             }
         }
 

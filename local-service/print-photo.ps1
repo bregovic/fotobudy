@@ -1,5 +1,6 @@
 param(
-    [string]$ImagePath
+    [string]$ImagePath,
+    [string]$PrinterName
 )
 
 Add-Type -AssemblyName System.Drawing
@@ -7,47 +8,98 @@ Add-Type -AssemblyName System.Drawing.Printing
 
 $pd = New-Object System.Drawing.Printing.PrintDocument
 
-# Use Default Printer
-# $pd.PrinterSettings.PrinterName = "Canon SELPHY CP1500" # Optional: force name if needed
-
+if (-not [string]::IsNullOrEmpty($PrinterName)) {
+    $pd.PrinterSettings.PrinterName = $PrinterName
+    # Check if validity is essentially checking if it exists/is installed
+    if (-not $pd.PrinterSettings.IsValid) {
+        Write-Host "VAROVANI: Tiskarna '$PrinterName' nenalezena nebo neplatna. Pouzivam vychozi." -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "Cilova tiskarna: $PrinterName"
+    }
+}
+# Canon Selphy usually needs Landscape for 148x100mm
 $pd.DefaultPageSettings.Landscape = $true
-# We want to ignore margins if possible, but driver dictates printable area.
+
+# Ignore logical margins to access full page size
 $pd.OriginAtMargins = $false 
 $pd.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0) 
 
 $pd.add_PrintPage({
-    param($sender, $e)
+        param($sender, $e)
     
-    $img = [System.Drawing.Image]::FromFile($ImagePath)
-    $g = $e.Graphics
+        $img = [System.Drawing.Image]::FromFile($ImagePath)
+        $g = $e.Graphics
+
+        # Get Physical Page Dimensions (in 1/100 inch)
+        $pageW = $e.PageBounds.Width
+        $pageH = $e.PageBounds.Height
+
+        # --- SETTINGS ---
+        # Bleed Factor: 0.03 (3%) expansion to ensure borderless
+        # This pushes the image slightly past the paper edges to eliminate white gaps.
+        $bleedFactor = 0.03 
     
-    # Get printable area (which might be smaller than physical if margins exist)
-    # However, if we want to force "Fill", we should use PageBounds (Physical Size) 
-    # dependent on OriginAtMargins = false.
+        # 1. DEFINE TARGET AREA (Page + Bleed)
+        $targetW = $pageW * (1 + $bleedFactor * 2)
+        $targetH = $pageH * (1 + $bleedFactor * 2)
     
-    # OVERSCAN / BLEED CORRECTION
-    # Expand the rectangle by ~2% to ensure no white borders appear due to driver margins.
-    $bleed = 0.02
+        # Center the target area relative to the page (Negative coords move it up/left)
+        $targetX = - ($pageW * $bleedFactor)
+        $targetY = - ($pageH * $bleedFactor)
+
+        # 2. ASPECT FILL CALCULATION
+        # We must fill the $target area completely with $img, preserving $img aspect ratio.
+        # We will crop the dimension that overflows.
     
-    $w = $e.PageBounds.Width
-    $h = $e.PageBounds.Height
+        $imgRatio = $img.Width / $img.Height
+        $targetRatio = $targetW / $targetH
     
-    $newW = $w * (1 + $bleed * 2)
-    $newH = $h * (1 + $bleed * 2)
-    $x = -($w * $bleed)
-    $y = -($h * $bleed)
+        $drawW = $targetW
+        $drawH = $targetH
+        $drawX = $targetX
+        $drawY = $targetY
     
-    $rect = New-Object System.Drawing.RectangleF($x, $y, $newW, $newH)
+        if ($imgRatio > $targetRatio) {
+            # Image is WIDER than target -> Match Height, Crop Width (Sides)
+            $drawH = $targetH
+            $drawW = $drawH * $imgRatio
+        
+            # Center horizontally: Subtract the overflow/2 from the starting X
+            $drawX = $targetX - ($drawW - $targetW) / 2
+        }
+        else {
+            # Image is TALLER (or narrower) than target -> Match Width, Crop Height (Top/Bottom)
+            $drawW = $targetW
+            $drawH = $drawW / $imgRatio
+        
+            # Center vertically
+            $drawY = $targetY - ($drawH - $targetH) / 2
+        }
     
-    # Draw Image Stretched to Fill Page (with Bleed)
-    $g.DrawImage($img, $rect)
+        # Debug info (visible in PowerShell console if run manually)
+        Write-Host "Page: $pageW x $pageH"
+        Write-Host "Target: $targetW x $targetH"
+        Write-Host "Draw: $drawW x $drawH at ($drawX, $drawY)"
     
-    $img.Dispose()
-})
+        # 3. DRAW
+        $rect = New-Object System.Drawing.RectangleF($drawX, $drawY, $drawW, $drawH)
+    
+        # Enable High Quality Scaling
+        $g.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+        $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+        $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+
+        $g.DrawImage($img, $rect)
+    
+        $img.Dispose()
+    })
 
 try {
     $pd.Print()
     Write-Host "Printed successfully"
-} catch {
+}
+catch {
     Write-Error $_.Exception.Message
 }
