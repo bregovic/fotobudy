@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, memo } from 'react';
-import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send, Trash2, CameraOff, Home, Palette, Pipette, MousePointer2, Wand2, Layout, Cloud, Wifi, WifiOff, Terminal, Video, FolderOpen, Shield, Lock, CheckCircle2, MessageSquare, ArrowLeft, ArrowRight, Calendar } from 'lucide-react';
+import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, X, AlertTriangle, Send, Trash2, CameraOff, Home, Palette, Pipette, MousePointer2, Wand2, Layout, Cloud, Wifi, WifiOff, Terminal, Video, FolderOpen, Shield, Lock, CheckCircle2, MessageSquare, ArrowLeft, ArrowRight, Calendar, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 
 const SESSION_ID = 'main';
@@ -9,6 +9,270 @@ const DEFAULT_CMD_PORT = 5513;
 // const PORTS_TO_SCAN = [5555, 5514, 5521, 5520, 5513]; // Moved inside useEffect
 
 
+
+// --- PHOTO EDITOR COMPONENT ---
+const PhotoEditor = ({ photoUrl, assets, onSave, onCancel }: any) => {
+    const [settings, setSettings] = useState({
+        bg: null as string | null,
+        sticker: null as string | null,
+        isBW: false,
+        chromaColor: '#00FF00',
+        tolerance: 100,
+        isChromaActive: false
+    });
+    const [processing, setProcessing] = useState(false);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    // Real-time Preview
+    useEffect(() => {
+        const render = async () => {
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (!ctx) return;
+
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+            img.src = photoUrl;
+            await new Promise(r => { img.onload = r; });
+
+            // Resize canvas to match image aspect but fit screen?
+            // Actually, keep resolution? 
+            // Let's use a reasonable preview size
+            const scale = Math.min(1, 800 / img.naturalWidth);
+            canvas.width = img.naturalWidth * scale;
+            canvas.height = img.naturalHeight * scale;
+
+            // 1. BG
+            if (settings.bg) {
+                try {
+                    const bg = new Image();
+                    bg.crossOrigin = "Anonymous";
+                    bg.src = settings.bg;
+                    await new Promise(r => { bg.onload = r; bg.onerror = r; });
+
+                    // Cover
+                    const ratio = Math.max(canvas.width / bg.naturalWidth, canvas.height / bg.naturalHeight);
+                    const bw = bg.naturalWidth * ratio;
+                    const bh = bg.naturalHeight * ratio;
+                    const bx = (canvas.width - bw) / 2;
+                    const by = (canvas.height - bh) / 2;
+                    ctx.drawImage(bg, bx, by, bw, bh);
+                } catch { }
+            } else {
+                // Clear
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            // 2. Photo + Chroma
+            if (settings.isChromaActive) {
+                const tempC = document.createElement('canvas'); // Temp for processing
+                tempC.width = canvas.width; tempC.height = canvas.height;
+                const tCtx = tempC.getContext('2d', { willReadFrequently: true });
+                if (tCtx) {
+                    tCtx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    const frameData = tCtx.getImageData(0, 0, canvas.width, canvas.height);
+                    const l = frameData.data.length;
+                    const targetR = parseInt(settings.chromaColor.slice(1, 3), 16);
+                    const targetG = parseInt(settings.chromaColor.slice(3, 5), 16);
+                    const targetB = parseInt(settings.chromaColor.slice(5, 7), 16);
+
+                    for (let i = 0; i < l; i += 4) {
+                        const r = frameData.data[i];
+                        const g = frameData.data[i + 1];
+                        const b = frameData.data[i + 2];
+                        const dist = Math.sqrt((r - targetR) ** 2 + (g - targetG) ** 2 + (b - targetB) ** 2);
+                        if (dist < settings.tolerance) frameData.data[i + 3] = 0;
+                    }
+                    tCtx.putImageData(frameData, 0, 0);
+                    ctx.drawImage(tempC, 0, 0);
+                }
+            } else {
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            }
+
+            // 3. BW
+            if (settings.isBW) {
+                const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const d = id.data;
+                for (let i = 0; i < d.length; i += 4) {
+                    const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+                    d[i] = g; d[i + 1] = g; d[i + 2] = g;
+                }
+                ctx.putImageData(id, 0, 0);
+            }
+
+            // 4. Sticker
+            if (settings.sticker) {
+                const s = new Image();
+                s.crossOrigin = "Anonymous";
+                s.src = settings.sticker;
+                await new Promise(r => { s.onload = r; s.onerror = r; });
+                const sW = canvas.width * 0.3;
+                const sH = s.naturalHeight * (sW / s.naturalWidth);
+                ctx.drawImage(s, canvas.width - sW - 20, canvas.height - sH - 20, sW, sH);
+            }
+        };
+        render();
+    }, [settings, photoUrl]);
+
+    const handleSave = async () => {
+        setProcessing(true);
+        // High-res rendering logic (similar to preview but full size)
+        // For simplicity, we can use the logic from processNewPhoto or just replicate basic steps here
+        // Replicating basic steps to ensure independence
+        try {
+            const img = new Image(); img.crossOrigin = "Anonymous"; img.src = photoUrl;
+            await new Promise(r => img.onload = r);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+            // ... (Full res implementation of above logic) ...
+            // 1. BG
+            if (settings.bg) {
+                const bg = new Image(); bg.crossOrigin = "Anonymous"; bg.src = settings.bg;
+                await new Promise(r => bg.onload = r);
+                const ratio = Math.max(canvas.width / bg.naturalWidth, canvas.height / bg.naturalHeight);
+                const bw = bg.naturalWidth * ratio; const bh = bg.naturalHeight * ratio;
+                ctx?.drawImage(bg, (canvas.width - bw) / 2, (canvas.height - bh) / 2, bw, bh);
+            }
+
+            // 2. Photo
+            if (settings.isChromaActive && ctx) {
+                const tempC = document.createElement('canvas'); tempC.width = canvas.width; tempC.height = canvas.height;
+                const tCtx = tempC.getContext('2d');
+                if (tCtx) {
+                    tCtx.drawImage(img, 0, 0);
+                    const frameData = tCtx.getImageData(0, 0, canvas.width, canvas.height);
+                    // ... Chroma logic ...
+                    const l = frameData.data.length;
+                    const targetR = parseInt(settings.chromaColor.slice(1, 3), 16);
+                    const targetG = parseInt(settings.chromaColor.slice(3, 5), 16);
+                    const targetB = parseInt(settings.chromaColor.slice(5, 7), 16);
+                    for (let i = 0; i < l; i += 4) {
+                        if (Math.sqrt((frameData.data[i] - targetR) ** 2 + (frameData.data[i + 1] - targetG) ** 2 + (frameData.data[i + 2] - targetB) ** 2) < settings.tolerance) frameData.data[i + 3] = 0;
+                    }
+                    tCtx.putImageData(frameData, 0, 0);
+                    ctx.drawImage(tempC, 0, 0);
+                }
+            } else {
+                ctx?.drawImage(img, 0, 0);
+            }
+
+            // 3. BW & Sticker
+            if (settings.isBW && ctx) {
+                const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const d = id.data;
+                for (let i = 0; i < d.length; i += 4) { const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; d[i] = g; d[i + 1] = g; d[i + 2] = g; }
+                ctx.putImageData(id, 0, 0);
+            }
+            if (settings.sticker && ctx) {
+                const s = new Image(); s.crossOrigin = "Anonymous"; s.src = settings.sticker;
+                await new Promise(r => s.onload = r);
+                const sW = canvas.width * 0.3; const sH = s.naturalHeight * (sW / s.naturalWidth);
+                ctx.drawImage(s, canvas.width - sW - 50, canvas.height - sH - 50, sW, sH);
+            }
+
+            // Export
+            canvas.toBlob(blob => {
+                onSave(blob);
+            }, 'image/jpeg', 0.95);
+
+        } catch (e) {
+            console.error(e);
+            setProcessing(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[80] bg-slate-950 flex flex-col animate-in fade-in slide-in-from-bottom-10">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 bg-slate-900 border-b border-slate-800">
+                <h2 className="text-xl font-bold text-white flex gap-2"><Palette className="text-pink-500" /> Editor Fotek</h2>
+                <div className="flex gap-4">
+                    <button onClick={onCancel} className="px-6 py-2 rounded-full text-slate-400 hover:bg-slate-800">Zrušit</button>
+                    <button onClick={handleSave} disabled={processing} className="px-8 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-lg flex items-center gap-2">
+                        {processing ? <RefreshCw className="animate-spin" /> : <CheckCircle2 />} Uložit
+                    </button>
+                </div>
+            </div>
+
+            <div className="flex-1 flex overflow-hidden">
+                {/* Canvas Area */}
+                <div className="flex-1 bg-black flex items-center justify-center p-8 relative">
+                    <canvas ref={canvasRef} className="max-w-full max-h-full shadow-2xl border border-slate-700" />
+                    {processing && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><RefreshCw className="text-white animate-spin" size={48} /></div>}
+                </div>
+
+                {/* Sidebar Controls */}
+                <div className="w-80 bg-slate-900 border-l border-slate-800 p-6 overflow-y-auto space-y-8 shadow-xl">
+
+                    {/* Effects */}
+                    <div>
+                        <h3 className="font-bold text-slate-300 mb-4 flex items-center gap-2">✨ Efekty</h3>
+                        <div className="flex items-center justify-between bg-slate-800 p-3 rounded-lg border border-slate-700 cursor-pointer" onClick={() => setSettings(s => ({ ...s, isBW: !s.isBW }))}>
+                            <span>Černobíle</span>
+                            <div className={`w-10 h-6 rounded-full p-1 transition-colors ${settings.isBW ? 'bg-indigo-500' : 'bg-slate-600'}`}>
+                                <div className={`w-4 h-4 bg-white rounded-full transition-transform ${settings.isBW ? 'translate-x-4' : ''}`} />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Green Screen */}
+                    <div>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-green-400 flex items-center gap-2"><Pipette size={16} /> Klíčování</h3>
+                            <button onClick={() => setSettings(s => ({ ...s, isChromaActive: !s.isChromaActive }))} className={`text-xs px-2 py-1 rounded ${settings.isChromaActive ? 'bg-green-600' : 'bg-slate-700'}`}>{settings.isChromaActive ? 'ON' : 'OFF'}</button>
+                        </div>
+                        {settings.isChromaActive && (
+                            <div className="space-y-4 animate-in fade-in">
+                                <div>
+                                    <label className="text-xs text-slate-500">Barva</label>
+                                    <div className="flex gap-2 mt-1">
+                                        {['#00FF00', '#0000FF', '#FF00FF'].map(c => (
+                                            <div key={c} onClick={() => setSettings(s => ({ ...s, chromaColor: c }))} className={`w-8 h-8 rounded-full cursor-pointer border-2 ${settings.chromaColor === c ? 'border-white' : 'border-transparent'}`} style={{ backgroundColor: c }} />
+                                        ))}
+                                        <input type="color" value={settings.chromaColor} onChange={e => setSettings(s => ({ ...s, chromaColor: e.target.value }))} className="w-8 h-8 bg-transparent" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs text-slate-500">Tolerance: {settings.tolerance}</label>
+                                    <input type="range" min="10" max="200" value={settings.tolerance} onChange={e => setSettings(s => ({ ...s, tolerance: Number(e.target.value) }))} className="w-full mt-1 accent-green-500" />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Backgrounds */}
+                    <div>
+                        <h3 className="font-bold text-purple-400 mb-4">🖼️ Pozadí</h3>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div onClick={() => setSettings(s => ({ ...s, bg: null }))} className={`aspect-video bg-slate-800 border-2 rounded flex items-center justify-center text-xs cursor-pointer ${!settings.bg ? 'border-purple-500' : 'border-slate-700'}`}>Žádné</div>
+                            {assets.filter((a: any) => a.type === 'BACKGROUND').map((a: any) => (
+                                <img key={a.id} src={a.url} onClick={() => setSettings(s => ({ ...s, bg: a.url }))} className={`w-full aspect-video object-cover rounded border-2 cursor-pointer ${settings.bg === a.url ? 'border-purple-500' : 'border-slate-700'}`} />
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Stickers */}
+                    <div>
+                        <h3 className="font-bold text-pink-400 mb-4">🦄 Samolepky</h3>
+                        <div className="grid grid-cols-3 gap-2">
+                            <div onClick={() => setSettings(s => ({ ...s, sticker: null }))} className={`aspect-square bg-slate-800 border-2 rounded flex items-center justify-center text-xs cursor-pointer ${!settings.sticker ? 'border-pink-500' : 'border-slate-700'}`}>Žádná</div>
+                            {assets.filter((a: any) => a.type === 'STICKER').map((a: any) => (
+                                <img key={a.id} src={a.url} onClick={() => setSettings(s => ({ ...s, sticker: a.url }))} className={`w-full aspect-square object-contain bg-slate-900 rounded border-2 cursor-pointer ${settings.sticker === a.url ? 'border-pink-500' : 'border-slate-700'}`} />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const LiveView = memo(({ streamUrl, isBW, isScanning, error, className, onRestart, onStreamError, onClick, printWidth, printHeight }: any) => {
     // Calculate aspect ratio for guide
@@ -65,7 +329,8 @@ const LiveView = memo(({ streamUrl, isBW, isScanning, error, className, onRestar
 });
 LiveView.displayName = 'LiveView';
 
-const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail, onClose }: any) => {
+// --- MODIFIED GALLERY GRID ---
+const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail, onClose, events, selectedEventId, onEventChange, onEdit }: any) => {
     const [viewPhotoIndex, setViewPhotoIndex] = useState<number | null>(null);
 
     // Nav Logic
@@ -100,8 +365,30 @@ const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail
                 <div className="flex items-center gap-4">
                     <h2 className="text-3xl font-bold text-white flex items-center gap-3"><ImageIcon className="text-purple-400" /> Galerie</h2>
                     <span className="bg-slate-800 text-slate-400 px-3 py-1 rounded-full text-xs font-mono">{photos.length} fotek</span>
+
+                    {/* Event Selector */}
+                    {events && (
+                        <div className="relative group ml-4">
+                            <select
+                                value={selectedEventId || ''}
+                                onChange={(e) => onEventChange(e.target.value)}
+                                className="appearance-none bg-slate-800 border border-slate-700 hover:border-slate-500 text-white pl-4 pr-10 py-2 rounded-full cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-sm"
+                            >
+                                <option value="">Aktuální akce</option>
+                                {events.map((ev: any) => (
+                                    <option key={ev.id} value={ev.id}>
+                                        {ev.name} {ev.isActive ? '(Active)' : ''}
+                                    </option>
+                                ))}
+                            </select>
+                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" size={14} />
+                        </div>
+                    )}
                 </div>
                 <div className="flex gap-4">
+                    {selectedIds.length === 1 && (
+                        <button onClick={() => onEdit(selectedIds[0])} className="bg-pink-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-pink-500 transition-colors shadow-lg shadow-pink-900/20"><Palette size={20} /> Upravit</button>
+                    )}
                     {selectedIds.length > 0 && (
                         <>
                             <button onClick={onDelete} className="bg-red-900/50 text-red-200 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-red-900 transition-colors"><Trash2 size={20} /> Smazat ({selectedIds.length})</button>
@@ -124,6 +411,10 @@ const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail
                     {/* Controls */}
                     <button onClick={() => setViewPhotoIndex(null)} className="absolute top-6 right-6 text-white/50 hover:text-white p-4 bg-black/50 rounded-full hover:bg-black/80"><X size={32} /></button>
 
+                    <div className="absolute bottom-6 flex gap-4">
+                        <button onClick={() => { setViewPhotoIndex(null); onEdit(photos[viewPhotoIndex].id); }} className="bg-pink-600 px-6 py-3 rounded-full font-bold text-white flex gap-2"><Palette /> Upravit</button>
+                    </div>
+
                     {viewPhotoIndex > 0 && (
                         <button onClick={prev} className="absolute left-6 top-1/2 -translate-y-1/2 text-white/50 hover:text-white p-4 bg-black/50 rounded-full hover:bg-black/80"><ArrowLeft size={48} /></button>
                     )}
@@ -133,12 +424,12 @@ const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail
                 </div>
             )}
 
-            {/* Grid */}
-            <div className="flex-1 overflow-y-auto p-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {/* Masonry Grid */}
+            <div className="flex-1 overflow-y-auto p-6 columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-4 space-y-4 block">
                 {photos.map((p: any, idx: number) => (
-                    <div key={p.id} onClick={() => setViewPhotoIndex(idx)} className={`relative w-full pb-[66.66%] bg-slate-900 rounded-xl overflow-hidden group transition-all duration-200 border border-slate-800 hover:shadow-xl hover:scale-[1.02] cursor-pointer ${selectedIds.includes(p.id) ? 'ring-4 ring-indigo-500 scale-[1.02]' : ''}`}>
-                        {/* Image - absolute to fill the aspect-ratio container */}
-                        <img src={p.url} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                    <div key={p.id} onClick={() => setViewPhotoIndex(idx)} className={`relative w-full break-inside-avoid mb-4 bg-slate-900 rounded-xl overflow-hidden group transition-all duration-200 border border-slate-800 hover:shadow-xl hover:scale-[1.02] cursor-pointer ${selectedIds.includes(p.id) ? 'ring-4 ring-indigo-500 scale-[1.02]' : ''}`}>
+                        {/* Image - Natural Aspect Ratio */}
+                        <img src={p.url} className="w-full h-auto block" loading="lazy" />
 
                         {/* Top-Right Checkbox */}
                         <button
@@ -181,10 +472,12 @@ export default function KioskPage() {
         } catch (e) { /* Audio context blocked or error */ }
     };
     const [lastPhoto, setLastPhoto] = useState<string | null>(null);
+    const [editingPhotoId, setEditingPhotoId] = useState<string | null>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [showGallery, setShowGallery] = useState(false);
     const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]);
     const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
+    const [galleryEventId, setGalleryEventId] = useState<string>('');
     const [showEmailModal, setShowEmailModal] = useState(false);
     const [emailInput, setEmailInput] = useState('');
     const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -273,13 +566,18 @@ export default function KioskPage() {
 
                 if (!upData.success) throw new Error('Upload print job failed');
 
+                // Extract relative path from URL (remove /photos/ prefix)
+                // URL: /photos/slug/file.jpg -> slug/file.jpg
+                const relativePath = upData.url.replace(/^\/photos\//, '');
+
                 // C) SEND TO PRINTER
                 showToast('Tisk... 🖨️');
                 const printRes = await fetch('/api/print', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        filename: upData.filename // "print_job_..."
+                        filename: upData.filename, // "print_job_..."
+                        path: relativePath
                     })
                 });
 
@@ -610,179 +908,33 @@ export default function KioskPage() {
         return () => clearInterval(interval);
     }, [activePort, cameraIp, status]);
 
-    // Process Photo with Effects
+    // Process Photo (Simple Review)
     const processNewPhoto = async (originalUrl: string) => {
-        // DOUBLE CHECK: Do not process already processed photos to prevent loops
-        if (originalUrl.includes('/photos/web_') || originalUrl.includes('edited_') || originalUrl.includes('print_')) {
-            console.log("🛑 Prevented processing of self-generated photo:", originalUrl);
-            return;
-        }
-
-        // Prevent concurrent processing
         if (isUploading) return;
-
-        // 1. Immediate Feedback
-        setStatus('review');
-        processingRef.current = false; // Release the capture lock immediately so timeout doesn't kill us
-
-        console.log("🎨 Processing:", originalUrl);
-
-        // If Green Screen is used, we might want to show "Processing" briefly instead of the raw green photo
-        // But for now, let's show original to be fast, and replace it when processed.
         setLastPhoto(originalUrl);
-        setIsUploading(true);
+        setStatus('review');
+
+        // Auto-return faster
+        setTimeout(() => {
+            setLastPhoto(null);
+            setStatus('idle');
+        }, 5000);
+    };
+
+    const handleEditorSave = async (blob: Blob) => {
+        const formData = new FormData();
+        formData.append('file', blob, `edited_${Date.now()}.jpg`);
+        formData.append('type', 'PHOTO');
 
         try {
-            // Load Original
-            const img = new Image();
-            img.crossOrigin = "Anonymous";
-            img.src = originalUrl;
-            await new Promise((resolve, reject) => {
-                img.onload = resolve;
-                img.onerror = reject;
-            });
-
-            // Setup Canvas
-            const canvas = document.createElement('canvas');
-            const MAX_WIDTH = 2000;
-            const scale = Math.min(1, MAX_WIDTH / img.naturalWidth);
-            const w = Math.floor(img.naturalWidth * scale);
-            const h = Math.floor(img.naturalHeight * scale);
-            canvas.width = w;
-            canvas.height = h;
-
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            if (!ctx) throw new Error("No Canvas Context");
-
-            // --- 1. BACKGROUND (If Chroma Key is Active) ---
-            let bgImg: HTMLImageElement | null = null;
-            if (sessionSettings.selectedBg) {
-                try {
-                    bgImg = new Image();
-                    bgImg.crossOrigin = "Anonymous";
-                    bgImg.src = sessionSettings.selectedBg;
-                    await new Promise(r => { bgImg!.onload = r; bgImg!.onerror = () => r(null); });
-                    if (bgImg) {
-                        // Draw BG scaled to cover
-                        const ratio = Math.max(w / bgImg.naturalWidth, h / bgImg.naturalHeight);
-                        const bw = bgImg.naturalWidth * ratio;
-                        const bh = bgImg.naturalHeight * ratio;
-                        const bx = (w - bw) / 2;
-                        const by = (h - bh) / 2;
-                        ctx.drawImage(bgImg, bx, by, bw, bh);
-                    }
-                } catch (e) { console.warn("BG Load Failed", e); }
-            }
-
-            // --- 2. DRAW IMAGE (or apply chroma) ---
-            if (sessionSettings.selectedBg && sessionSettings.chromaKeyColor) {
-                // Create temp canvas for the photo to perform pixel manipulation
-                const tempC = document.createElement('canvas');
-                tempC.width = w; tempC.height = h;
-                const tempCtx = tempC.getContext('2d', { willReadFrequently: true });
-                if (tempCtx) {
-                    tempCtx.drawImage(img, 0, 0, w, h);
-                    const frameData = tempCtx.getImageData(0, 0, w, h);
-                    const l = frameData.data.length;
-                    // Parse Key Color
-                    const keyColor = sessionSettings.chromaKeyColor;
-                    const targetR = parseInt(keyColor.slice(1, 3), 16);
-                    const targetG = parseInt(keyColor.slice(3, 5), 16);
-                    const targetB = parseInt(keyColor.slice(5, 7), 16);
-                    const tol = sessionSettings.chromaTolerance;
-
-                    for (let i = 0; i < l; i += 4) {
-                        const r = frameData.data[i];
-                        const g = frameData.data[i + 1];
-                        const b = frameData.data[i + 2];
-                        // Simple Euclidean distance
-                        const dist = Math.sqrt((r - targetR) ** 2 + (g - targetG) ** 2 + (b - targetB) ** 2);
-                        if (dist < tol) {
-                            frameData.data[i + 3] = 0; // Transparent
-                        }
-                    }
-                    tempCtx.putImageData(frameData, 0, 0);
-                    // Draw processed photo over background
-                    ctx.drawImage(tempC, 0, 0);
-                }
-            } else {
-                // No Green Screen - Just draw photo
-                ctx.drawImage(img, 0, 0, w, h);
-            }
-
-            // --- 3. BW FILTER ---
-            if (sessionSettings.isBW) {
-                const imgData = ctx.getImageData(0, 0, w, h);
-                const d = imgData.data;
-                for (let i = 0; i < d.length; i += 4) {
-                    const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-                    d[i] = gray; d[i + 1] = gray; d[i + 2] = gray;
-                }
-                ctx.putImageData(imgData, 0, 0);
-            }
-
-            // --- 4. STICKER ---
-            if (sessionSettings.selectedSticker) {
-                try {
-                    const sticker = new Image();
-                    sticker.crossOrigin = "Anonymous";
-                    sticker.src = sessionSettings.selectedSticker;
-                    await new Promise(r => { sticker.onload = r; sticker.onerror = () => r(null); });
-
-                    // Sticker Logic (Corners or Center)
-                    const sW = w * 0.3; // 30% width
-                    const sH = sticker.naturalHeight * (sW / sticker.naturalWidth);
-                    const pad = w * 0.05;
-
-                    let sX = w - sW - pad; // default BR
-                    let sY = h - sH - pad;
-
-                    // Simple positioning logic based on state (can be expanded)
-                    // default is BR (bottom-right)
-
-                    ctx.drawImage(sticker, sX, sY, sW, sH);
-                } catch (e) { console.warn("Sticker error", e); }
-            }
-
-            // --- EXPORT & UPLOAD ---
-            canvas.toBlob(async (blob) => {
-                if (!blob) throw new Error("Canvas Blob failed");
-                const previewUrl = URL.createObjectURL(blob);
-                setLastPhoto(previewUrl);
-                setStatus('review'); // Show photo immediately
-
-                // Upload
-                const formData = new FormData();
-                formData.append('file', blob, `edited_${Date.now()}.jpg`);
-                formData.append('type', 'PHOTO');
-
-                const uploadRes = await fetch('/api/media/upload', { method: 'POST', body: formData });
-                const uploadData = await uploadRes.json();
-
-                if (uploadData.success && uploadData.url) {
-                    addLog('✅ Uloženo & Upraveno');
-                    setLastPhoto(uploadData.url);
-                } else {
-                    addLog('❌ Chyba uploadu');
-                }
-                setIsUploading(false);
-
-                // Auto-return to Live View after 2 seconds
-                setTimeout(() => {
-                    setLastPhoto(null);
-                    setStatus('idle');
-                }, 2000);
-
-                // Refresh gallery data silently (no open)
-                openGallery().then(() => setShowGallery(false));
-
-            }, 'image/jpeg', 0.90);
-
-        } catch (e) {
-            console.error("Processing Error:", e);
-            setIsUploading(false);
-            showToast('Chyba zpracování');
-        }
+            const res = await fetch('/api/media/upload', { method: 'POST', body: formData });
+            const d = await res.json();
+            if (d.success) {
+                showToast('Uloženo ✅');
+                setEditingPhotoId(null);
+                if (showGallery) fetchGalleryPhotos(galleryEventId);
+            } else showToast('Chyba uložení');
+        } catch { showToast('Chyba'); }
     };
 
     // Actions
@@ -851,10 +1003,23 @@ export default function KioskPage() {
     };
 
     // --- GALLERY LOGIC START ---
+    const fetchGalleryPhotos = async (eventId: string = '') => {
+        try {
+            const url = eventId ? `/api/media/list?eventId=${eventId}` : '/api/media/list';
+            const res = await fetch(url);
+            const data = await res.json();
+            if (Array.isArray(data)) setGalleryPhotos(data);
+        } catch (e) { }
+    };
+
     const openGallery = async () => {
         setShowGallery(true); setSelectedPhotoIds([]);
-        try { const res = await fetch('/api/media/list'); const data = await res.json(); if (Array.isArray(data)) setGalleryPhotos(data); } catch (e) { }
+        fetchGalleryPhotos(galleryEventId);
     };
+
+    useEffect(() => {
+        if (showGallery) fetchGalleryPhotos(galleryEventId);
+    }, [galleryEventId]);
     const toggleSelection = (id: string) => {
         setSelectedPhotoIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
     };
@@ -922,6 +1087,16 @@ export default function KioskPage() {
 
             {/* Legacy Overlay Removed */}
 
+            {/* EDITOR OVERLAY */}
+            {editingPhotoId && (
+                <PhotoEditor
+                    photoUrl={galleryPhotos.find(p => p.id === editingPhotoId)?.url}
+                    assets={assets}
+                    onSave={handleEditorSave}
+                    onCancel={() => setEditingPhotoId(null)}
+                />
+            )}
+
             {/* SETTINGS MODAL */}
             {showSettings && (
                 <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-8 animate-in fade-in zoom-in duration-200">
@@ -949,12 +1124,12 @@ export default function KioskPage() {
                                     {/* 1. EVENT MANAGER */}
                                     <div className="p-6 bg-slate-950 border border-indigo-500/30 rounded-2xl shadow-lg space-y-6">
                                         <h3 className="text-xl font-bold text-indigo-400 flex items-center gap-2"><Calendar /> Správa Události</h3>
-                                        
+
                                         {/* ACTIVE EVENT SELECTOR (LOOKUP) */}
                                         <div className="space-y-2">
                                             <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Vyberte aktivní událost</label>
                                             <div className="relative">
-                                                <select 
+                                                <select
                                                     className="w-full p-4 bg-slate-900 border border-indigo-500 rounded-xl text-lg font-bold text-white outline-none appearance-none cursor-pointer hover:bg-slate-800 transition-colors"
                                                     onChange={(e) => {
                                                         const id = e.target.value;
@@ -983,19 +1158,19 @@ export default function KioskPage() {
                                         <div className="space-y-2">
                                             <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Vytvořit novou</label>
                                             <div className="flex flex-col md:flex-row gap-4">
-                                                <input 
-                                                    type="text" 
+                                                <input
+                                                    type="text"
                                                     value={newEventName}
                                                     onChange={(e) => setNewEventName(e.target.value)}
-                                                    placeholder="Název (např. Svatba Jana)" 
-                                                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:border-indigo-500 outline-none transition-colors" 
+                                                    placeholder="Název (např. Svatba Jana)"
+                                                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:border-indigo-500 outline-none transition-colors"
                                                 />
-                                                <input 
-                                                    type="text" 
+                                                <input
+                                                    type="text"
                                                     value={newEventPassword}
                                                     onChange={(e) => setNewEventPassword(e.target.value)}
-                                                    placeholder="Heslo (volitelné)" 
-                                                    className="w-full md:w-48 bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:border-indigo-500 outline-none transition-colors" 
+                                                    placeholder="Heslo (volitelné)"
+                                                    className="w-full md:w-48 bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:border-indigo-500 outline-none transition-colors"
                                                 />
                                                 <button onClick={createEvent} className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-xl font-bold shadow-lg transition-all active:scale-95 whitespace-nowrap">
                                                     Vytvořit
@@ -1003,26 +1178,9 @@ export default function KioskPage() {
                                             </div>
                                         </div>
                                     </div>
-                                    
-                                    {/* 2. GRAPHICS (Existing Logic) */}
-                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                        <div className="space-y-6">
-                                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
-                                                <h3 className="font-semibold mb-4 text-green-400 flex items-center gap-2"><Pipette size={18} /> Green Screen</h3>
-                                                <div className="mb-4 relative rounded-lg overflow-hidden border border-slate-600 bg-black aspect-video group">
-                                                    <LiveView streamUrl={finalStreamUrl} isBW={sessionSettings.isBW} onClick={handlePreviewClick} className={`w-full h-full object-cover ${isPickingColor ? 'cursor-crosshair' : ''}`} printWidth={sessionSettings.printWidth} printHeight={sessionSettings.printHeight} />
-                                                    {isPickingColor && <div className="absolute inset-0 bg-green-500/20 pointer-events-none flex items-center justify-center text-green-300 font-bold border-4 border-green-500 animate-pulse">KLIKNI KAMKOLIV</div>}
-                                                    <div className="absolute bottom-2 right-2"><button onClick={() => setIsPickingColor(!isPickingColor)} className={`p-2 rounded-full shadow-lg flex items-center gap-2 text-xs font-bold ${isPickingColor ? 'bg-green-500 text-black' : 'bg-white text-black'}`}><MousePointer2 size={16} /> Kapátko</button></div>
-                                                </div>
-                                                <div className="flex items-center justify-between"><span>Tolerance</span><input type="range" min="10" max="250" value={sessionSettings.chromaTolerance} onChange={e => setSessionSettings({ ...sessionSettings, chromaTolerance: Number(e.target.value) })} className="w-32 accent-green-500 h-2 bg-slate-900 rounded-lg appearance-none cursor-pointer" /></div>
-                                            </div>
-                                            <div className="p-5 bg-slate-800 border-slate-700 border rounded-xl flex justify-between items-center"><span className="font-semibold">Černobíle</span><div onClick={() => setSessionSettings(s => ({ ...s, isBW: !s.isBW }))} className={`w-14 h-8 rounded-full p-1 cursor-pointer transition-colors ${sessionSettings.isBW ? 'bg-indigo-600' : 'bg-slate-700'}`}><div className={`w-6 h-6 bg-white rounded-full transition-transform ${sessionSettings.isBW ? 'translate-x-6' : ''}`}></div></div></div>
-                                        </div>
 
-                                        <div className="space-y-6">
-                                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl"><h3 className="font-semibold mb-4 text-purple-400">🖼️ Pozadí</h3><div className="grid grid-cols-3 gap-2"><div onClick={() => setSessionSettings({ ...sessionSettings, selectedBg: null })} className={`aspect-video bg-slate-900 border-2 rounded cursor-pointer flex items-center justify-center text-xs ${sessionSettings.selectedBg === null ? 'border-purple-500' : 'border-slate-700'}`}>Nic</div>{assets.filter(a => a.type === 'BACKGROUND').map(a => (<img key={a.id} src={a.url} onClick={() => setSessionSettings({ ...sessionSettings, selectedBg: a.url })} className={`w-full aspect-video object-cover rounded border-2 cursor-pointer ${sessionSettings.selectedBg === a.url ? 'border-purple-500' : 'border-slate-700'}`} />))}</div></div>
-                                            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl"><h3 className="font-semibold mb-4 text-pink-400">🦄 Samolepka</h3><div className="grid grid-cols-4 gap-2"><div onClick={() => setSessionSettings({ ...sessionSettings, selectedSticker: null })} className="aspect-square bg-slate-900 border-2 border-slate-700 rounded cursor-pointer flex items-center justify-center text-xs">Nic</div>{assets.filter(a => a.type === 'STICKER').map(a => (<img key={a.id} src={a.url} onClick={() => setSessionSettings({ ...sessionSettings, selectedSticker: a.url })} className={`w-full aspect-square object-contain bg-slate-900 rounded border-2 cursor-pointer ${sessionSettings.selectedSticker === a.url ? 'border-pink-500' : 'border-slate-700'}`} />))}</div></div>
-                                        </div>
+                                    <div className="p-4 bg-slate-800 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">
+                                        💡 Úpravy fotek (pozadí, samolepky) jsou nyní dostupné přímo v Galerii u každé fotky.
                                     </div>
                                 </div>
                             )}
@@ -1128,12 +1286,7 @@ export default function KioskPage() {
             {/* DOCK */}
             <div className="absolute top-6 left-6 z-50"><Link href="/" className="p-4 bg-white/10 text-white rounded-full backdrop-blur-md hover:bg-white/20 hover:scale-105 transition-all shadow-lg"><Home size={28} /></Link></div>
 
-            {/* ACTION BUTTON (Edit Last Photo) */}
-            {status === 'review' && lastPhoto && (
-                <div className="absolute top-6 right-6 z-50 animate-in fade-in slide-in-from-top-4">
-                    <button onClick={() => processNewPhoto(lastPhoto)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-full font-bold shadow-2xl transition-transform active:scale-95 text-lg"><Wand2 size={24} /> Upravit Fotku</button>
-                </div>
-            )}
+
 
             {/* MAIN CONTROLS */}
             <div className="absolute bottom-12 z-30 w-full flex justify-center p-4">
@@ -1192,6 +1345,10 @@ export default function KioskPage() {
                     onPrint={printSelected}
                     onEmail={bulkEmail}
                     onClose={() => setShowGallery(false)}
+                    events={events} // Pass events from KioskPage state
+                    selectedEventId={galleryEventId}
+                    onEventChange={(id: string) => setGalleryEventId(id)}
+                    onEdit={(id: string) => setEditingPhotoId(id)}
                 />
             )}
 

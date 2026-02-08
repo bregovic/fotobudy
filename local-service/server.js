@@ -19,9 +19,11 @@ const CANDIDATE_PORTS = [5513, 5520, 5514, 5599];
 let dccPort = 5513; // Start with default, auto-rotate on error
 
 // --- KONFIGURACE ---
+// --- KONFIGURACE ---
 // Dynamic URL getter
 const getDccApiUrl = () => `http://${DCC_HOST}:${dccPort}/?CMD=Capture`;
 
+const CLOUD_API_URL = 'https://cvak.up.railway.app';
 const BASE_PHOTOS_DIR = path.join(process.cwd(), 'public', 'photos');
 let currentEventSlug = '';
 let SAVE_DIR = BASE_PHOTOS_DIR;
@@ -369,21 +371,47 @@ $img.Dispose(); $newImg.Dispose(); $graph.Dispose();
 
 
 app.post('/print', (req, res) => {
-    let { filename } = req.body;
-    // Strip web_ prefix if present to print the original high-res file
-    if (filename && filename.startsWith('web_')) {
-        filename = filename.replace('web_', '');
+    let { filename, path: relativePath } = req.body;
+
+    // Determine file path
+    let filePath;
+    if (relativePath) {
+        // If relative path is provided (e.g. from URL), use it relative to BASE
+        // Sanitize path to prevent traversal
+        const safePath = relativePath.replace(/^(\.\.(\/|\\|$))+/, '');
+        filePath = path.join(BASE_PHOTOS_DIR, safePath);
+    } else {
+        // Legacy/Fallback: Use filename and current SAVE_DIR
+        // Strip web_ prefix if present to print the original high-res file
+        if (filename && filename.startsWith('web_')) {
+            filename = filename.replace('web_', '');
+        }
+        filePath = path.join(SAVE_DIR, filename);
     }
 
-    const filePath = path.join(SAVE_DIR, filename);
-    console.log(`[PRINT] Požadavek na tisk: ${filename}`);
+    console.log(`[PRINT] Požadavek na tisk: ${path.basename(filePath)} (${filePath})`);
 
     if (!fs.existsSync(filePath)) {
-        console.error('[PRINT] Soubor neexistuje!');
-        return res.status(404).json({ success: false, error: 'File not found' });
+        console.error(`[PRINT] Soubor neexistuje: ${filePath}`);
+        // Fallback: If we looked in SAVE_DIR and failed, try BASE_PHOTOS_DIR just in case
+        if (!relativePath && SAVE_DIR !== BASE_PHOTOS_DIR) {
+            const fallbackPath = path.join(BASE_PHOTOS_DIR, filename);
+            if (fs.existsSync(fallbackPath)) {
+                console.log(`[PRINT] Nalezeno v fallback umístění: ${fallbackPath}`);
+                filePath = fallbackPath;
+            } else {
+                return res.status(404).json({ success: false, error: 'File not found' });
+            }
+        } else {
+            return res.status(404).json({ success: false, error: 'File not found' });
+        }
     }
 
-    const printCmd = `powershell -ExecutionPolicy Bypass -File "${path.join(__dirname, 'print-photo.ps1')}" -ImagePath "${filePath}"`;
+    // --- KONFIGURACE TISKÁRNY ---
+    // Přesný název tiskárny ve Windows. Pokud neexistuje, použije se výchozí.
+    const TARGET_PRINTER = "Canon SELPHY CP1500";
+
+    const printCmd = `powershell -ExecutionPolicy Bypass -File "${path.join(__dirname, 'print-photo.ps1')}" -ImagePath "${filePath}" -PrinterName "${TARGET_PRINTER}"`;
     exec(printCmd, (error, stdout, stderr) => {
         if (error) {
             console.error('[PRINT] Chyba spuštění tisku:', error);
