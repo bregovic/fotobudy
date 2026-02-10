@@ -8,7 +8,7 @@ const SETTINGS_FILE_DEFAULT = path.join(process.cwd(), 'settings.json');
 
 // Helper: Read Local
 function getLocalSettings() {
-    let settings = {};
+    let settings: any = {};
     if (fs.existsSync(SETTINGS_FILE_DEFAULT)) {
         try { settings = JSON.parse(fs.readFileSync(SETTINGS_FILE_DEFAULT, 'utf-8')); } catch { }
     }
