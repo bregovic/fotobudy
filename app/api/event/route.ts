@@ -48,16 +48,21 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-    const events = await prisma.event.findMany({
-        orderBy: { createdAt: 'desc' }
-    });
+    try {
+        const events = await prisma.event.findMany({
+            orderBy: { createdAt: 'desc' }
+        });
 
-    // Sanitizace hesel před odesláním na klienta
-    const safeEvents = events.map(e => ({
-        ...e,
-        hasPassword: !!e.password && e.password.length > 0,
-        password: undefined // Neodesílat heslo
-    }));
+        // Sanitizace hesel před odesláním na klienta
+        const safeEvents = events.map(e => ({
+            ...e,
+            hasPassword: !!e.password && e.password.length > 0,
+            password: undefined // Neodesílat heslo
+        }));
 
-    return NextResponse.json(safeEvents);
+        return NextResponse.json(safeEvents);
+    } catch (e: any) {
+        console.error("GET /api/event error:", e);
+        return NextResponse.json({ error: e.message, fallback: [] }, { status: 500 });
+    }
 }

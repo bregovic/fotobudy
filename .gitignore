@@ -53,3 +53,11 @@ sync_map.json
 settings.json
 
 debug_watcher.txt
+
+
+# Deployment Bundles
+/Deployment_Full
+/Patch_Update
+/_PRENOS
+/Local_Backup
+*debug*.html

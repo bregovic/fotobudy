@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { prisma } from '../../../../lib/prisma';
+import { prisma } from '../../../../lib/prisma'; // Keep import, but handle cautiously
 
 export const dynamic = 'force-dynamic';
 
@@ -9,28 +9,12 @@ const IS_CLOUD = !!process.env.RAILWAY_ENVIRONMENT_NAME;
 
 export async function GET(req: NextRequest) {
     try {
-        const { searchParams } = new URL(req.url);
-        const eventId = searchParams.get('eventId');
-
-        let targetEvent = null;
-
-        if (eventId) {
-            targetEvent = await prisma.event.findUnique({ where: { id: eventId } });
-        } else {
-            targetEvent = await prisma.event.findFirst({ where: { isActive: true } });
-        }
-
         // --- ☁️ CLOUD MODE (RAILWAY) ---
         if (IS_CLOUD) {
-            const whereClause = targetEvent ? { eventId: targetEvent.id } : {};
-
             const medias = await prisma.media.findMany({
                 orderBy: { createdAt: 'desc' },
                 take: 60,
-                where: {
-                    ...whereClause,
-                    type: { in: ['PHOTO', 'VIDEO'] }
-                }
+                where: { type: 'PHOTO' }
             });
 
             return NextResponse.json(medias.map(m => ({
@@ -41,43 +25,71 @@ export async function GET(req: NextRequest) {
         }
 
         // --- 🏠 LOCAL MODE (OFFLINE) ---
-        let publicDir = path.join(process.cwd(), 'public', 'photos');
-        let urlPrefix = '/photos/';
+        // [SAFE LIST API] - No Prisma, No Crash.
+        const baseDir = path.join(process.cwd(), 'public', 'photos');
+        const allPhotos: any[] = [];
+        const limit = 60; // Max number of photos to return
 
-        if (targetEvent?.slug) {
-            publicDir = path.join(publicDir, targetEvent.slug);
-            urlPrefix = `/photos/${targetEvent.slug}/`;
+        if (!fs.existsSync(baseDir)) {
+            return NextResponse.json([]);
         }
 
-        if (!fs.existsSync(publicDir)) return NextResponse.json([]);
+        // Funkce pro rekurzivni hledani
+        const scan = (dir: string, depth: number) => {
+            if (depth > 2) return;
+            try {
+                const list = fs.readdirSync(dir, { withFileTypes: true });
+                for (const entry of list) {
+                    const fullPath = path.join(dir, entry.name);
 
-        const files = fs.readdirSync(publicDir)
-            .filter(f => {
-                const lower = f.toLowerCase();
-                const isWeb = lower.startsWith('web_');
-                const isEdited = lower.startsWith('edited_');
-                // const isAutoPreview = lower.startsWith('web_dsc_');
+                    if (entry.isDirectory()) {
+                        scan(fullPath, depth + 1);
+                    } else if (entry.isFile()) {
+                        const lower = entry.name.toLowerCase();
+                        if ((lower.endsWith('.jpg') || lower.endsWith('.jpeg')) && !lower.startsWith('.')) {
+                            // Pouze web verze, zadne printy
+                            if (lower.startsWith('print_')) continue;
 
-                return (isWeb || isEdited) &&
-                    (lower.startsWith('print_') === false) &&
-                    (lower.endsWith('.jpg') || lower.endsWith('.jpeg'));
-            })
-            .map(f => ({
-                name: f,
-                time: fs.statSync(path.join(publicDir, f)).mtime.getTime()
-            }))
-            .sort((a, b) => b.time - a.time)
-            .slice(0, 50);
+                            const stats = fs.statSync(fullPath);
+                            const relativePath = path.relative(path.join(process.cwd(), 'public'), fullPath);
+                            const url = '/' + relativePath.replace(/\\/g, '/');
 
-        const media = files.map(f => ({
-            id: f.name,
-            url: `${urlPrefix}${f.name}`,
-            createdAt: new Date(f.time)
-        }));
+                            allPhotos.push({
+                                id: entry.name, // Use filename as ID
+                                url: url,
+                                createdAt: new Date(stats.mtimeMs),
+                                isEdited: lower.startsWith('edited_'),
+                                originalName: lower.startsWith('edited_') ? lower.replace('edited_', '') : lower
+                            });
+                        }
+                    }
+                }
+            } catch (e) { /* Ignore EPERM/ENOENT */ }
+        };
 
-        return NextResponse.json(media);
-    } catch (error) {
-        console.error(error);
-        return NextResponse.json({ error: 'Failed to fetch media' }, { status: 500 });
+        scan(baseDir, 0);
+
+        // [SMART FILTER] - Hide originals if edited version exists
+        const editedMap = new Set<string>();
+        allPhotos.forEach(p => {
+            if (p.isEdited) editedMap.add(p.originalName);
+        });
+
+        const filteredPhotos = allPhotos.filter(p => {
+            // Keep if it is edited OR if it is original AND NOT edited version exists
+            if (p.isEdited) return true;
+            if (editedMap.has(p.id.toLowerCase())) return false; // Hide original because edited exists
+            return true;
+        });
+
+        // Sort by newest first
+        filteredPhotos.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+        // Return top N photos
+        return NextResponse.json(filteredPhotos.slice(0, limit));
+
+    } catch (error: any) {
+        console.warn("List error:", error);
+        return NextResponse.json([], { status: 500 });
     }
 }

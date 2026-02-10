@@ -23,32 +23,43 @@ function getLocalSettings() {
 
 export async function GET() {
     try {
-        // 1. Load from DB
+        // 1. Load Local Settings
+        const localSettings = getLocalSettings();
+
+        // 2. Load from DB
         const dbSettings = await prisma.setting.findMany();
         const dbConfig: Record<string, any> = {};
 
-        dbSettings.forEach(s => {
-            try {
-                // Try parsing JSON values, otherwise keep string
-                dbConfig[s.key] = JSON.parse(s.value);
-            } catch {
-                dbConfig[s.key] = s.value;
-            }
-        });
-
-        // 2. Load Local (fallback/override?)
-        // Strategy: DB is source of truth. If DB has data, use it.
         if (dbSettings.length > 0) {
-            // Sync DB -> Local file for offline backup
+            dbSettings.forEach(s => {
+                try {
+                    dbConfig[s.key] = JSON.parse(s.value);
+                } catch {
+                    dbConfig[s.key] = s.value;
+                }
+            });
+
+            // 3. Intelligent Merge: DB wins generally, BUT local wins for SMTP if DB is empty
+            const finalConfig = { ...localSettings, ...dbConfig };
+
+            const isDbSmtpEmpty = !dbConfig.smtp_config || !dbConfig.smtp_config.host || !dbConfig.smtp_config.user;
+            const isLocalSmtpValid = localSettings.smtp_config && localSettings.smtp_config.host && localSettings.smtp_config.user;
+
+            if (isDbSmtpEmpty && isLocalSmtpValid) {
+                console.log("Using Local SMTP config instead of empty DB config");
+                finalConfig.smtp_config = localSettings.smtp_config;
+            }
+
+            // 4. Sync Final -> Local File (Backup)
             try {
-                // Prioritize syncing to local override file if exists, otherwise default
                 const targetFile = fs.existsSync(SETTINGS_FILE_LOCAL) ? SETTINGS_FILE_LOCAL : SETTINGS_FILE_DEFAULT;
-                fs.writeFileSync(targetFile, JSON.stringify(dbConfig, null, 2));
+                fs.writeFileSync(targetFile, JSON.stringify(finalConfig, null, 2));
             } catch (e) { console.error("Write Local Settings Error", e); }
-            return NextResponse.json(dbConfig);
+
+            return NextResponse.json(finalConfig);
         } else {
             // DB empty? Return local.
-            return NextResponse.json(getLocalSettings());
+            return NextResponse.json(localSettings);
         }
 
     } catch (e) {

@@ -49,6 +49,17 @@ try {
     // Ignorujeme chybu, pravděpodobně nebylo co čistit
 }
 
+// 0.1 CLEANUP: Smazat Next.js lock file (pro jistotu)
+try {
+    const lockFile = path.join(process.cwd(), '.next', 'dev', 'lock');
+    if (fs.existsSync(lockFile)) {
+        fs.unlinkSync(lockFile);
+        console.log('      ✅ Next.js lock file smazán');
+    }
+} catch (e) {
+    console.log('      ⚠️  Nepodařilo se smazat lock file:', e.message);
+}
+
 // 1. Spustit DigicamControl (jediné oddělené okno)
 console.log('📷 [1/4] Startuji DigicamControl...');
 if (fs.existsSync(DIGICAM_PATH)) {

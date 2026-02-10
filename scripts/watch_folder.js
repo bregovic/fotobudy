@@ -52,11 +52,16 @@ function startWatching() {
     uniquePaths.forEach(safeDir => {
         log(`✅ SLEDUJI: ${safeDir}`);
 
-        // A. Native Watch
+        // A. Native Watch (Recursive on Windows)
         try {
-            fs.watch(safeDir, (eventType, filename) => {
+            fs.watch(safeDir, { recursive: true }, (eventType, filename) => {
                 if (!filename) return;
                 const f = filename.toLowerCase();
+
+                // 🌟 NEW: Check if file is in root and needs moving to subfolder
+                // We read the active event from 'public/photos' structure or API? 
+                // Easier: Just let handleFileDetect decide.
+
                 if (f.endsWith('.jpg') && !f.startsWith('web_') && !f.startsWith('edited_')) {
                     handleFileDetect(path.join(safeDir, filename));
                 }
