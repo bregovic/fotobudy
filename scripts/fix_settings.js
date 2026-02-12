@@ -28,7 +28,7 @@ if (!settings.email_template) settings.email_template = {};
 settings.smtp_config.host = 'smtp.gmail.com';
 settings.smtp_config.port = '465';
 settings.smtp_config.user = 'blickacvak@gmail.com';
-settings.smtp_config.pass = 'qmyw pnfv hsnf yjwc';
+settings.smtp_config.pass = 'YOUR_APP_PASSWORD';
 
 // 4. Ensure Template
 if (!settings.email_template.subject) settings.email_template.subject = 'Fotka je tu! 🥳';

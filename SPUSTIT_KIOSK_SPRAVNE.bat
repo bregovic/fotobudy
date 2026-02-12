@@ -13,16 +13,21 @@ echo.
 
 cd /d "%~dp0"
 
-REM 1. Zkontrolujeme, zda bezi server (port 3000)
-netstat -an | find "3000" | find "LISTENING" >nul
+REM 1. Zkontrolujeme, zda bezi server (port 3000) - robustni kontrola (CZ/EN)
+netstat -an | find ":3000 " | find /i "LISTENING" >nul
 if %errorlevel% neq 0 (
-    echo [INFO] Lokalni server nebezi. Startuji Blick_Cvak.bat...
+    netstat -an | find ":3000 " | find /i "NASLOUCH" >nul
+)
+
+if %errorlevel% neq 0 (
+    echo [INFO] Lokalni server nebezi (port 3000 volny). Startuji Blick_Cvak.bat...
     start "" "Blick_Cvak.bat"
     
     echo Cekam 15 sekund na start serveru...
     timeout /t 15 >nul
 ) else (
-    echo [OK] Server jiz bezi.
+    echo [OK] Server jiz bezi (port 3000 obsazen).
+    echo [INFO] Nespoustim novou instanci, pouze oteviram okno.
 )
 
 REM 2. Otevreme Chrome na LOCALHOST

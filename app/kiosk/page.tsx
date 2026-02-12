@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, memo } from 'react';
-import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, RefreshCcw, X, AlertTriangle, Send, Trash2, CameraOff, Home, Palette, Pipette, MousePointer2, Wand2, Layout, Cloud, Wifi, WifiOff, Terminal, Video, FolderOpen, Shield, Lock, CheckCircle2, MessageSquare, ArrowLeft, ArrowRight, Calendar, ChevronDown } from 'lucide-react';
+import { Image as ImageIcon, Printer, Settings, Mail, RefreshCw, RefreshCcw, X, AlertTriangle, Send, Trash2, CameraOff, Home, Palette, Pipette, MousePointer2, Wand2, Layout, Cloud, Wifi, WifiOff, Terminal, Video, FolderOpen, Shield, Lock, CheckCircle2, MessageSquare, ArrowLeft, ArrowRight, Calendar, ChevronDown, Timer } from 'lucide-react';
 import Link from 'next/link';
 
 const SESSION_ID = 'main';
@@ -25,6 +25,10 @@ const PhotoEditor = ({ photoUrl, assets, onSave, onCancel }: any) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const isDragging = useRef(false);
     const lastPos = useRef({ x: 0, y: 0 });
+
+    // Pinch to Zoom
+    const pointerCache = useRef<Map<number, { x: number, y: number }>>(new Map());
+    const prevDist = useRef<number | null>(null);
 
     useEffect(() => {
         const render = async () => {
@@ -130,19 +134,54 @@ const PhotoEditor = ({ photoUrl, assets, onSave, onCancel }: any) => {
         render();
     }, [settings, photoUrl, transform]);
 
-    // Handle Pan
+    // Handle Pan & Zoom
     const handlePointerDown = (e: React.PointerEvent) => {
-        isDragging.current = true;
-        lastPos.current = { x: e.clientX, y: e.clientY };
+        e.currentTarget.setPointerCapture(e.pointerId);
+        pointerCache.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (pointerCache.current.size === 1) {
+            isDragging.current = true;
+            lastPos.current = { x: e.clientX, y: e.clientY };
+        }
     };
+
     const handlePointerMove = (e: React.PointerEvent) => {
-        if (!isDragging.current) return;
-        const dx = e.clientX - lastPos.current.x;
-        const dy = e.clientY - lastPos.current.y;
-        lastPos.current = { x: e.clientX, y: e.clientY };
-        setTransform(p => ({ ...p, x: p.x + dx, y: p.y + dy }));
+        const cache = pointerCache.current;
+        if (!cache.has(e.pointerId)) return;
+
+        // Update current pointer
+        cache.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        // If 2 pointers -> PINCH ZOOM
+        if (cache.size === 2) {
+            const points = Array.from(cache.values());
+            const curDist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+
+            if (prevDist.current !== null) {
+                const delta = curDist - prevDist.current;
+                setTransform(t => ({
+                    ...t,
+                    scale: Math.max(0.5, Math.min(3, t.scale + (delta * 0.005)))
+                }));
+            }
+            prevDist.current = curDist;
+            return;
+        }
+
+        // If 1 pointer -> DRAG
+        if (cache.size === 1 && isDragging.current) {
+            const dx = e.clientX - lastPos.current.x;
+            const dy = e.clientY - lastPos.current.y;
+            lastPos.current = { x: e.clientX, y: e.clientY };
+            setTransform(p => ({ ...p, x: p.x + dx, y: p.y + dy }));
+        }
     };
-    const handlePointerUp = () => { isDragging.current = false; };
+
+    const handlePointerUp = (e: React.PointerEvent) => {
+        pointerCache.current.delete(e.pointerId);
+        if (pointerCache.current.size < 2) prevDist.current = null;
+        if (pointerCache.current.size === 0) isDragging.current = false;
+    };
 
     const handleSave = async () => {
         setProcessing(true);
@@ -502,9 +541,7 @@ const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail
                     {/* Controls */}
                     <button onClick={() => setViewPhotoIndex(null)} className="absolute top-6 right-6 text-white/50 hover:text-white p-4 bg-black/50 rounded-full hover:bg-black/80"><X size={32} /></button>
 
-                    <div className="absolute bottom-6 flex gap-4">
-                        <button onClick={() => { setViewPhotoIndex(null); onEdit(photos[viewPhotoIndex].id); }} className="bg-pink-600 px-6 py-3 rounded-full font-bold text-white flex gap-2"><Palette /> Upravit</button>
-                    </div>
+
 
                     {viewPhotoIndex > 0 && (
                         <button onClick={prev} className="absolute left-6 top-1/2 -translate-y-1/2 text-white/50 hover:text-white p-4 bg-black/50 rounded-full hover:bg-black/80"><ArrowLeft size={48} /></button>
@@ -515,12 +552,12 @@ const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail
                 </div>
             )}
 
-            {/* Masonry Grid */}
-            <div className="flex-1 overflow-y-auto p-6 columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-4 space-y-4 block">
+            {/* Standard Grid (Left-to-Right) */}
+            <div className="flex-1 overflow-y-auto p-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 content-start">
                 {photos.map((p: any, idx: number) => (
-                    <div key={p.id} onClick={() => setViewPhotoIndex(idx)} className={`relative w-full break-inside-avoid mb-4 bg-slate-900 rounded-xl overflow-hidden group transition-all duration-200 border border-slate-800 hover:shadow-xl hover:scale-[1.02] cursor-pointer ${selectedIds.includes(p.id) ? 'ring-4 ring-indigo-500 scale-[1.02]' : ''}`}>
-                        {/* Image - Natural Aspect Ratio */}
-                        <img src={p.url} className="w-full h-auto block" loading="lazy" />
+                    <div key={p.id} onClick={() => setViewPhotoIndex(idx)} className={`relative w-full bg-slate-900 rounded-xl overflow-hidden group transition-all duration-200 border border-slate-800 hover:shadow-xl hover:scale-[1.02] cursor-pointer ${selectedIds.includes(p.id) ? 'ring-4 ring-indigo-500 scale-[1.02]' : ''}`} style={{ paddingBottom: '66.66%' }}>
+                        {/* Image - Cover to fill the grid cell (Absolute due to padding hack) */}
+                        <img src={p.url} className="absolute inset-0 w-full h-full object-cover block" loading="lazy" />
 
                         {/* Top-Right Checkbox */}
                         <button
@@ -538,6 +575,8 @@ const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail
 
 export default function KioskPage() {
     const [status, setStatus] = useState<'idle' | 'countdown' | 'processing' | 'review'>('idle');
+    const [timerSeconds, setTimerSeconds] = useState(3); // Default 3s
+    const [showTimerMenu, setShowTimerMenu] = useState(false);
     // const [countdown, setCountdown] = useState(0); // REMOVED LEGACY LOCAL STATE
     const lastBeepRef = useRef<number | null>(null);
 
@@ -589,6 +628,60 @@ export default function KioskPage() {
         printHeight: 100, // mm
         smtp: { host: '', port: '', user: '', pass: '' }
     });
+    const [assets, setAssets] = useState<{ id: string, url: string, type: 'BACKGROUND' | 'STICKER' }[]>([]);
+    const [assetPrompt, setAssetPrompt] = useState('');
+    const [isGeneratingAsset, setIsGeneratingAsset] = useState(false);
+
+    // Load assets on mount
+    useEffect(() => {
+        fetchAssets();
+    }, []);
+
+    const fetchAssets = async () => {
+        try {
+            const res = await fetch('/api/assets/list');
+            const data = await res.json();
+            if (data.success) {
+                const newAssets = [
+                    ...data.backgrounds.map((b: any) => ({ id: b.name, url: b.url, type: 'BACKGROUND' })),
+                    ...data.stickers.map((s: any) => ({ id: s.name, url: s.url, type: 'STICKER' }))
+                ];
+                setAssets(newAssets);
+            }
+        } catch (e) { console.error("Assets load failed", e); }
+    };
+
+    const handleAssetUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'background' | 'sticker') => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('type', type);
+
+        try {
+            const res = await fetch('/api/assets/upload', { method: 'POST', body: fd });
+            const d = await res.json();
+            if (d.success) { showToast('Nahráno ✅'); fetchAssets(); }
+            else showToast('Chyba nahrávání');
+        } catch { showToast('Chyba'); }
+    };
+
+    const handleAIGenerate = async (isSticker: boolean) => {
+        if (!assetPrompt) return;
+        setIsGeneratingAsset(true);
+        try {
+            const res = await fetch('/api/assets/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: assetPrompt, isSticker })
+            });
+            const d = await res.json();
+            if (d.success) { showToast('Vygenerováno ✅'); fetchAssets(); setAssetPrompt(''); }
+            else showToast('Chyba AI: ' + d.error);
+        } catch { showToast('Chyba spojení'); }
+        setIsGeneratingAsset(false);
+    };
 
     // ... (rest of the file until printSelected)
 
@@ -692,7 +785,7 @@ export default function KioskPage() {
     const [cloudStreamEnabled, setCloudStreamEnabled] = useState(true);
     const [streamStatus, setStreamStatus] = useState('offline');
     const [streamLog, setStreamLog] = useState<string[]>([]);
-    const [assets, setAssets] = useState<any[]>([]);
+    // Removed duplicate assets definition
     const [isPickingColor, setIsPickingColor] = useState(false);
     const [streamToken, setStreamToken] = useState(Date.now());
 
@@ -1015,7 +1108,7 @@ export default function KioskPage() {
         setTimeout(() => {
             setLastPhoto(null);
             setStatus('idle');
-        }, 5000);
+        }, 2000); // Only 2 seconds delay
     };
 
     const handleEditorSave = async (blob: Blob) => {
@@ -1043,7 +1136,7 @@ export default function KioskPage() {
     // Unified Countdown: Trigger server with delay
     const startCountdown = () => {
         if (processingRef.current) return;
-        takePhoto(3000);
+        takePhoto(timerSeconds * 1000);
     };
 
     const takePhoto = async (delay = 0) => {
@@ -1209,6 +1302,11 @@ export default function KioskPage() {
                                 <button onClick={() => setActiveTab('admin')} className={`px-6 py-2 rounded-full font-bold flex gap-2 transition-all ${activeTab === 'admin' ? 'bg-red-900/40 text-red-300' : 'text-slate-400 hover:text-white'}`}>
                                     <Shield size={16} /> Technické
                                 </button>
+                                {techAuth && (
+                                    <button onClick={() => setActiveTab('assets')} className={`px-6 py-2 rounded-full font-bold flex gap-2 transition-all ${activeTab === 'assets' ? 'bg-pink-900/40 text-pink-300' : 'text-slate-400 hover:text-white'}`}>
+                                        <Palette size={16} /> Grafika
+                                    </button>
+                                )}
                             </div>
                             <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-white/10 rounded-full"><X size={24} /></button>
                         </div>
@@ -1278,6 +1376,18 @@ export default function KioskPage() {
 
                                     <div className="p-4 bg-slate-800 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">
                                         💡 Úpravy fotek (pozadí, samolepky) jsou nyní dostupné přímo v Galerii u každé fotky.
+                                    </div>
+
+                                    {/* CLOSE APP BUTTON (Unprotected) */}
+                                    <div className="flex justify-end pt-4 border-t border-slate-800">
+                                        <button onClick={() => {
+                                            if (confirm('Opravdu chcete zavřít aplikaci?')) {
+                                                window.close();
+                                                window.location.href = '/';
+                                            }
+                                        }} className="px-6 py-2 bg-red-900/30 hover:bg-red-900/80 text-red-200 rounded-lg font-bold transition-colors flex items-center gap-2 text-sm">
+                                            <X size={16} /> Zavřít Aplikaci
+                                        </button>
                                     </div>
                                 </div>
                             )}
@@ -1382,6 +1492,75 @@ export default function KioskPage() {
                                     )}
                                 </>
                             )}
+
+                            {/* === ASSETS TAB (ADMIN ONLY) === */}
+                            {activeTab === 'assets' && techAuth && (
+                                <div className="space-y-8 animate-in fade-in">
+                                    <div className="p-6 bg-slate-950 border border-pink-500/30 rounded-2xl shadow-lg space-y-6">
+                                        <h3 className="text-xl font-bold text-pink-400 flex items-center gap-2"><Wand2 /> AI Generátor & Upload</h3>
+
+                                        <div className="flex gap-4">
+                                            <input
+                                                value={assetPrompt}
+                                                onChange={e => setAssetPrompt(e.target.value)}
+                                                placeholder="Popište obrázek (např. 'Vánoční stromeček na pláži')"
+                                                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl p-4 text-white focus:border-pink-500 outline-none"
+                                            />
+                                            <button
+                                                onClick={() => handleAIGenerate(false)}
+                                                disabled={isGeneratingAsset || !assetPrompt}
+                                                className="px-6 py-2 bg-pink-600 hover:bg-pink-500 disabled:opacity-50 rounded-xl font-bold flex items-center gap-2 whitespace-nowrap"
+                                            >
+                                                {isGeneratingAsset ? <RefreshCw className="animate-spin" /> : <Wand2 />}
+                                                Gen. Pozadí
+                                            </button>
+                                        </div>
+                                        <div className="flex gap-4 text-xs text-slate-500">
+                                            <label className="cursor-pointer hover:text-white flex items-center gap-2 bg-slate-900 px-4 py-2 rounded-lg border border-slate-800">
+                                                <input type="file" className="hidden" accept="image/*" onChange={e => handleAssetUpload(e, 'background')} />
+                                                📁 Nahrát Pozadí (JPG)
+                                            </label>
+                                            <label className="cursor-pointer hover:text-white flex items-center gap-2 bg-slate-900 px-4 py-2 rounded-lg border border-slate-800">
+                                                <input type="file" className="hidden" accept="image/*" onChange={e => handleAssetUpload(e, 'sticker')} />
+                                                🦄 Nahrát Samolepku (PNG)
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                        {/* Backgrounds List */}
+                                        <div>
+                                            <h3 className="font-bold text-slate-300 mb-4">🖼️ Dostupná Pozadí</h3>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {assets.filter(a => a.type === 'BACKGROUND').map(a => (
+                                                    <div key={a.id} className="relative group aspect-video">
+                                                        <img src={a.url} className="w-full h-full object-cover rounded-lg border border-slate-700" />
+                                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                                            {/* Delete logic simplified: just hide for now or need API */}
+                                                            <span className="text-xs text-white bg-black/50 px-2 py-1 rounded">{a.id}</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                {assets.filter(a => a.type === 'BACKGROUND').length === 0 && <p className="text-slate-500 text-xs">Žádná pozadí.</p>}
+                                            </div>
+                                        </div>
+
+                                        {/* Stickers List */}
+                                        <div>
+                                            <h3 className="font-bold text-slate-300 mb-4">🦄 Dostupné Samolepky</h3>
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {assets.filter(a => a.type === 'STICKER').map(a => (
+                                                    <div key={a.id} className="relative group aspect-square bg-slate-900 rounded-lg border border-slate-700 p-2">
+                                                        <img src={a.url} className="w-full h-full object-contain" />
+                                                    </div>
+                                                ))}
+                                                {assets.filter(a => a.type === 'STICKER').length === 0 && <p className="text-slate-500 text-xs">Žádné samolepky.</p>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                         </div>
                     </div>
                 </div>
@@ -1424,6 +1603,35 @@ export default function KioskPage() {
                             {isUploading ? <RefreshCw className="animate-spin" size={24} /> : <Mail size={24} />}
                             <span>{isUploading ? 'Ukládám' : 'Email'}</span>
                         </button>
+
+                        {/* TIMER SELECTOR */}
+                        <div className="relative">
+                            <button
+                                className={`flex flex-col items-center gap-1 transition-all text-[10px] uppercase font-bold tracking-widest ${status === 'idle' ? 'text-white opacity-80 hover:scale-110 hover:text-cyan-400' : 'text-slate-500 cursor-not-allowed'}`}
+                                disabled={status !== 'idle'}
+                                onClick={() => setShowTimerMenu(!showTimerMenu)}
+                            >
+                                <div className="relative">
+                                    <Timer size={24} />
+                                    <span className="absolute -top-2 -right-2 bg-cyan-500 text-black text-[9px] font-bold px-1 rounded-full normal-case">{timerSeconds}s</span>
+                                </div>
+                                <span>Časovač</span>
+                            </button>
+
+                            {showTimerMenu && (
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 bg-slate-900 border border-slate-700 rounded-xl p-2 flex flex-col gap-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 z-50">
+                                    {[0, 3, 5, 10, 20].map(s => (
+                                        <button
+                                            key={s}
+                                            onClick={() => { setTimerSeconds(s); setShowTimerMenu(false); }}
+                                            className={`px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap ${timerSeconds === s ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+                                        >
+                                            {s === 0 ? 'Ihned' : `${s} sek`}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1469,6 +1677,10 @@ export default function KioskPage() {
                     </div>
                 </div>
             )}
+            {/* VERSION INDICATOR */}
+            <div className="absolute bottom-2 right-2 text-[10px] text-slate-700 pointer-events-none z-10 font-mono opacity-50">
+                v1.2 (Assets+Sync)
+            </div>
         </div>
     );
 }

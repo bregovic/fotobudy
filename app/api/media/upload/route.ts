@@ -48,6 +48,9 @@ export async function POST(req: NextRequest) {
                 .toBuffer();
         }
 
+        const HAS_DB = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('postgresql');
+
+        // 1. ALWAYS SAVE LOCALLY (For Kiosk Display)
         // Determine Sync/Public Path Structure
         const basePhotosDir = path.join(process.cwd(), 'public', 'photos');
         let targetDir = basePhotosDir;
@@ -62,51 +65,48 @@ export async function POST(req: NextRequest) {
             fs.mkdirSync(targetDir, { recursive: true });
         }
 
-        const publicUrl = `${urlPrefix}${webFilename}`;
-
-        // --- ☁️ CLOUD MODE (RAILWAY) ---
-        if (IS_CLOUD) {
-            const media = await prisma.media.create({
-                data: {
-                    url: `/api/media/image/${Date.now()}`,
-                    type: type as string,
-                    localPath: originalLocalPath,
-                    data: processedBuffer,
-                    eventId: activeEvent?.id // Link to event
-                }
-            });
-
-            const dbUrl = `/api/media/image/${media.id}`;
-            await prisma.media.update({
-                where: { id: media.id },
-                data: { url: dbUrl }
-            });
-
-            console.log(`[UPLOAD] Cloud DB Saved: ${media.id} (Event: ${activeEvent?.slug})`);
-
-            // Cache to FS (Ephemeral)
-            fs.writeFileSync(path.join(targetDir, webFilename), processedBuffer);
-
-            return NextResponse.json({
-                success: true,
-                url: dbUrl,
-                filename: webFilename,
-                id: media.id
-            });
-        }
-
-        // --- 🏠 LOCAL MODE (OFFLINE) ---
         const webFilePath = path.join(targetDir, webFilename);
         fs.writeFileSync(webFilePath, processedBuffer);
+        console.log(`[UPLOAD] Local Disk Saved: ${webFilename}`);
 
-        console.log(`[UPLOAD] Local Disk Saved: ${webFilename} (Event: ${activeEvent?.slug})`);
+        const publicUrl = `${urlPrefix}${webFilename}`;
+        let finalUrl = publicUrl;
+        let finalId = webFilename;
+
+        // 2. SYNCHRONIZE TO CLOUD DB (If available)
+        if (HAS_DB) {
+            try {
+                const media = await prisma.media.create({
+                    data: {
+                        url: `/api/media/image/${Date.now()}`, // Placeholder, updated next step
+                        type: type as string,
+                        localPath: originalLocalPath,
+                        data: processedBuffer, // Store binary in DB
+                        eventId: activeEvent?.id
+                    }
+                });
+
+                const dbUrl = `/api/media/image/${media.id}`;
+                await prisma.media.update({
+                    where: { id: media.id },
+                    data: { url: dbUrl }
+                });
+
+                console.log(`[UPLOAD] Cloud DB Synced: ${media.id}`);
+                finalUrl = dbUrl; // Use DB URL for consistency if we wanted, but local kiosk prefers local file?
+                // Actually, local kiosk can use local file for speed, but returns DB ID for reference.
+                finalId = media.id;
+            } catch (e) {
+                console.error("Cloud Sync Failed (Offline?)", e);
+                // Continue with local only
+            }
+        }
 
         return NextResponse.json({
             success: true,
-            url: publicUrl,
+            url: publicUrl, // Keep local URL for immediate display on Kiosk
             filename: webFilename,
-            // For local mode, we don't have UUIDs, so we use filename as ID, same as 'list' endpoint
-            id: webFilename
+            id: finalId
         });
 
     } catch (e: any) {

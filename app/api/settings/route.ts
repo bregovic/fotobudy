@@ -42,8 +42,8 @@ export async function GET() {
             // 3. Intelligent Merge: DB wins generally, BUT local wins for SMTP if DB is empty
             const finalConfig = { ...localSettings, ...dbConfig };
 
-            const isDbSmtpEmpty = !dbConfig.smtp_config || !dbConfig.smtp_config.host || !dbConfig.smtp_config.user;
-            const isLocalSmtpValid = localSettings.smtp_config && localSettings.smtp_config.host && localSettings.smtp_config.user;
+            const isDbSmtpEmpty = !(dbConfig as any).smtp_config || !(dbConfig as any).smtp_config.host || !(dbConfig as any).smtp_config.user;
+            const isLocalSmtpValid = (localSettings as any).smtp_config && (localSettings as any).smtp_config.host && (localSettings as any).smtp_config.user;
 
             if (isDbSmtpEmpty && isLocalSmtpValid) {
                 console.log("Using Local SMTP config instead of empty DB config");
