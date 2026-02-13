@@ -1,0 +1,67 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id        String   @id
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  status    String   @default("idle")
+}
+
+model Media {
+  id        String   @id @default(cuid())
+  url       String
+  type      String   // "PHOTO", "VIDEO"
+  createdAt DateTime @default(now())
+  
+  // NOVÉ: Ukládáme fotku (web verzi) přímo do DB
+  data      Bytes?
+  localPath String?
+  
+  event     Event?   @relation(fields: [eventId], references: [id])
+  eventId   String?
+}
+
+model Command {
+  id        String   @id @default(cuid())
+  command   String
+  params    String?
+  createdAt DateTime @default(now())
+  processed Boolean  @default(false)
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model Asset {
+  id        String   @id @default(cuid())
+  type      String   // "BACKGROUND", "STICKER"
+  url       String
+  name      String
+  data      Bytes
+  createdAt DateTime @default(now())
+}
+
+
+
+model Event {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  password  String?
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  media     Media[]
+}

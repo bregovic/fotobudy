@@ -1,0 +1,6 @@
+Navod k instalaci:
+0. POKUD MATE PROBLEMY, spustte FORCE_RESTART.bat
+0B. Pro nahrani starych fotek spustte SYNCHRONIZOVAT_FOTKY.bat
+1. Smazte settings.local.json na Kiosku.
+2. Spustte INSTALL_FAST.bat
+3. Spustte SPUSTIT_KIOSK_SPRAVNE.bat

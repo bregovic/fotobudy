@@ -23,6 +23,10 @@ let dccPort = 5513; // Start with default, auto-rotate on error
 // Dynamic URL getter
 const getDccApiUrl = () => `http://${DCC_HOST}:${dccPort}/?CMD=Capture`;
 
+// State for Frontend Countdown
+let countdownTarget = 0;
+
+
 const CLOUD_API_URL = 'https://cvak.up.railway.app';
 const BASE_PHOTOS_DIR = path.join(process.cwd(), 'public', 'photos');
 let currentEventSlug = '';
@@ -84,27 +88,33 @@ function startCameraPolling() {
         // Fetch from DCC Raw (most reliable) - WITH TIMEOUT & NO AGENT (Fix Socket Exhaustion)
         const liveViewUrl = `http://${DCC_HOST}:${dccPort}/liveview.jpg`;
 
+        let requestCompleted = false;
+
         const req = http.get(liveViewUrl, { agent: false }, (res) => {
             if (res.statusCode !== 200) {
                 res.resume(); // consume body calling 'end'
+                requestCompleted = true; // Mark as handled to skip error logic
                 consecutiveErrors++;
                 setTimeout(poll, consecutiveErrors > 5 ? 2000 : 500);
                 return;
             }
 
-            // Success! Reset errors.
-            if (consecutiveErrors > 0) {
-                console.log(`[POLLER] Spojení navázáno na portu ${dccPort}!`);
+            // Success! 
+            if (consecutiveErrors > 5) {
+                console.log(`[POLLER] Spojení OBNOVENO na portu ${dccPort}!`);
             }
             consecutiveErrors = 0;
 
             const chunks = [];
             res.on('data', c => chunks.push(c));
             res.on('end', () => {
+                requestCompleted = true;
                 const buffer = Buffer.concat(chunks);
-                if (buffer.length > 2000) { // Ignore partial/invalid frames
+                if (buffer.length > 2000) {
                     latestFrame = buffer;
                     lastFrameTime = Date.now();
+                } else {
+                    // console.log(`[POLLER] Malý frame: ${buffer.length}b`);
                 }
                 setTimeout(poll, 50); // ~20 FPS target
             });
@@ -115,6 +125,8 @@ function startCameraPolling() {
         });
 
         req.on('error', (e) => {
+            if (requestCompleted) return; // Ignore errors if we already handled response
+
             // Increase error streak
             consecutiveErrors++;
 
@@ -123,10 +135,10 @@ function startCameraPolling() {
             const nextIdx = (currentIdx + 1) % CANDIDATE_PORTS.length;
             dccPort = CANDIDATE_PORTS[nextIdx];
 
-            // BACKOFF STRATEGY (Prevents EADDRINUSE)
+            // BACKOFF STRATEGY
             let retryDelay = 500;
-            if (consecutiveErrors > 5) retryDelay = 2000;  // Slow down after 5 fails
-            if (consecutiveErrors > 20) retryDelay = 5000; // Very slow if DCC is dead
+            if (consecutiveErrors > 5) retryDelay = 2000;
+            if (consecutiveErrors > 20) retryDelay = 5000;
 
             if (consecutiveErrors % 10 === 0) {
                 console.log(`[POLLER] Chyba spojení (${e.code || e.message}). Retrying in ${retryDelay}ms... (Fail #${consecutiveErrors})`);
@@ -137,12 +149,36 @@ function startCameraPolling() {
 
         // TIMEOUT FIX: 2s
         req.setTimeout(2000, () => {
-            req.destroy();
+            if (!requestCompleted) {
+                req.destroy();
+            }
         });
     };
 }
 
-// ... (stream.mjpg endpoint remains the same)
+
+// --- LOCAL MJPEG STREAM ENDPOINT ---
+app.get('/stream.mjpg', (req, res) => {
+    res.writeHead(200, {
+        'Content-Type': 'multipart/x-mixed-replace; boundary=myboundary',
+        'Cache-Control': 'no-cache',
+        'Connection': 'close',
+        'Pragma': 'no-cache'
+    });
+
+    const writeFrame = () => {
+        if (latestFrame) {
+            res.write(`--myboundary\r\nContent-Type: image/jpeg\r\nContent-Length: ${latestFrame.length}\r\n\r\n`);
+            res.write(latestFrame);
+            res.write('\r\n');
+        }
+    };
+
+    const interval = setInterval(writeFrame, 50); // 20 FPS
+
+    req.on('close', () => clearInterval(interval));
+});
+
 
 // --- CLOUD STREAM UPLOAD LOOP ---
 // Reads from SHARED BUFFER
@@ -197,57 +233,71 @@ app.get('/cloud-stream-status', (req, res) => {
 
 // --- BACKGROUND PROCESSING LOOP ---
 // Checks for new photos and generates 'web_' versions for gallery
+// --- BACKGROUND PROCESSING LOOP ---
+// Checks for new photos and generates 'cloud' versions for gallery/upload
 function startBackgroundProcessing() {
-    console.log('[BG] Starting photo processor...');
+    console.log('[BG] Starting photo processor (Dest: /cloud folder)...');
     let isProcessing = false;
     setInterval(async () => {
         if (isProcessing) return;
         isProcessing = true;
         try {
-            if (!fs.existsSync(SAVE_DIR)) return;
+            if (!fs.existsSync(SAVE_DIR)) {
+                // console.log(`[BG] Save dir not found: ${SAVE_DIR}`);
+                return;
+            }
+
+            // Ensure CLOUD subdir exists
+            const cloudDir = path.join(SAVE_DIR, 'cloud');
+            if (!fs.existsSync(cloudDir)) fs.mkdirSync(cloudDir, { recursive: true });
+
             const files = fs.readdirSync(SAVE_DIR);
 
-            // Find original JPEGs that don't have a web_ counterpart
+            // Find original JPEGs in ROOT that don't have a copy in CLOUD
             const originals = files.filter(f =>
                 f.match(/\.(jpg|jpeg)$/i) &&
-                !f.startsWith('web_') &&
-                !f.startsWith('print_') && // Ignore temporary print jobs
-                !files.includes(`web_${f}`)
+                !fs.lstatSync(path.join(SAVE_DIR, f)).isDirectory()
             );
 
+            // console.log(`[BG] Scan: ${originals.length} originals found in ${SAVE_DIR}`);
+
             for (const textFile of originals) {
-                const filePath = path.join(SAVE_DIR, textFile);
+                const srcPath = path.join(SAVE_DIR, textFile);
+                const destPath = path.join(cloudDir, textFile); // Same filename, separated folder
+
+                // Skip if already exists
+                if (fs.existsSync(destPath)) continue;
 
                 // Check if file is "stable" (not being written to)
-                // Simple check: check mtime is at least 2 seconds ago
                 try {
-                    const stats = fs.statSync(filePath);
+                    const stats = fs.statSync(srcPath);
                     const now = Date.now();
-                    if (now - stats.mtimeMs < 2000) continue; // Too new, might be writing
+                    if (now - stats.mtimeMs < 1000) continue; // Too new
 
-                    console.log(`[BG] Processing new photo: ${textFile}`);
+                    console.log(`[BG] 🔄 Optimizing: ${textFile} -> cloud/${textFile}`);
 
-                    const tempPath = path.join(os.tmpdir(), `web_${textFile}`);
+                    // Use PowerShell/Sharp to resize
+                    const tempPath = path.join(os.tmpdir(), `temp_${textFile}`);
 
-                    // 1. Resize to temp using PowerShell (robust, no node-canvas needed)
-                    await resizeImagePowershell(filePath, tempPath, 1200);
+                    try {
+                        await resizeImagePowershell(srcPath, tempPath, 1600);
 
-                    // 2. Move to destination
-                    if (fs.existsSync(tempPath)) {
-                        const destPath = path.join(SAVE_DIR, `web_${textFile}`);
-                        fs.copyFileSync(tempPath, destPath);
-                        fs.unlinkSync(tempPath);
+                        if (fs.existsSync(tempPath)) {
+                            fs.copyFileSync(tempPath, destPath);
+                            fs.unlinkSync(tempPath);
+                            console.log(`[BG] ✅ Created cloud version: ${destPath}`);
 
-                        console.log(`[BG] Created web version: ${destPath}`);
-
-                        // INJECT REVIEW FRAME INTO STREAM
-                        try {
-                            latestFrame = fs.readFileSync(destPath);
-                            isReviewing = true;
-                            setTimeout(() => isReviewing = false, 2000);
-                        } catch (e) { console.error("Preview inject failed", e); }
-                    } else {
-                        console.error(`[BG] Error: Temp file not found after resize: ${tempPath}`);
+                            // Inject into Live View stream for review
+                            try {
+                                latestFrame = fs.readFileSync(destPath);
+                                isReviewing = true;
+                                setTimeout(() => isReviewing = false, 2000);
+                            } catch (e) { }
+                        } else {
+                            console.error(`[BG] ⚠️ PowerShell failed to create file (no error thrown, but file missing)`);
+                        }
+                    } catch (psError) {
+                        console.error(`[BG] ❌ PowerShell Error:`, psError);
                     }
 
                 } catch (e) {
@@ -260,7 +310,7 @@ function startBackgroundProcessing() {
         } finally {
             isProcessing = false;
         }
-    }, 3000); // Check every 3 seconds
+    }, 2000);
 }
 
 function resizeImagePowershell(inputPath, outputPath, maxWidth) {
@@ -280,63 +330,102 @@ $graph.DrawImage($img, 0, 0, $newWidth, $newHeight);
 $newImg.Save('${outputPath}', [System.Drawing.Imaging.ImageFormat]::Jpeg);
 $img.Dispose(); $newImg.Dispose(); $graph.Dispose();
 `;
-        // -WindowStyle Hidden prevents the CMD window from appearing
         const command = `powershell -WindowStyle Hidden -Command "${psScript.replace(/\r?\n/g, ' ')}"`;
         exec(command, { maxBuffer: 1024 * 1024 * 10, windowsHide: true }, (error) => { if (error) reject(error); else resolve(); });
     });
 }
 
 
+// --- STATUS ENDPOINT (For Countdown) ---
+app.get('/status', (req, res) => {
+    res.json({
+        countdownTarget,
+        now: Date.now(),
+        dccPort
+    });
+});
+
+// --- SHOOT TRIGGER ---
+app.post('/shoot', (req, res) => {
+    let { delay } = req.body;
+    delay = parseInt(delay) || 0;
+
+    console.log(`[SHOOT] Požadavek na focení (Delay: ${delay}ms)...`);
+
+    // Set Target Time implies countdown starts NOW
+    if (delay > 0) {
+        countdownTarget = Date.now() + delay;
+    }
+
+    setTimeout(() => {
+        // Reset countdown just before shooting
+        countdownTarget = 0;
+
+        // Call DCC API ?CMD=Capture
+        const captureUrl = getDccApiUrl();
+
+        http.get(captureUrl, (dccRes) => {
+            dccRes.resume();
+        }).on('error', (e) => {
+            console.error(`[SHOOT] Chyba komunikace s DCC: ${e.message}`);
+        });
+
+    }, delay);
+
+    res.json({ success: true, message: `Timer started (${delay}ms)` });
+});
+
 app.post('/print', (req, res) => {
     let { filename, path: relativePath } = req.body;
 
-    // Determine file path
-    let filePath;
+    // Logic: The frontend (gallery) sees the 'cloud' version e.g. "cloud/IMG_001.jpg"
+    // We need to find the ORIGINAL "IMG_001.jpg" one level up.
+
+    let printFilePath = '';
+
+    // If ID/Relative path sent
     if (relativePath) {
-        // If relative path is provided (e.g. from URL), use it relative to BASE
-        // Sanitize path to prevent traversal
-        const safePath = relativePath.replace(/^(\.\.(\/|\\|$))+/, '');
-        filePath = path.join(BASE_PHOTOS_DIR, safePath);
-    } else {
-        // Legacy/Fallback: Use filename and current SAVE_DIR
-        // Strip web_ prefix if present to print the original high-res file
-        if (filename && filename.startsWith('web_')) {
-            filename = filename.replace('web_', '');
+        // relativePath might be "event/cloud/IMG.jpg" or "event/IMG.jpg"
+        // Try to locate it in BASE_PHOTOS_DIR first
+        const fullPath = path.join(BASE_PHOTOS_DIR, relativePath);
+
+        // Strategy: If file is in a 'cloud' folder, step up.
+        if (fullPath.includes('\\cloud\\') || fullPath.includes('/cloud/')) {
+            printFilePath = fullPath.replace(/[\\/]cloud[\\/]/, path.sep); // Remove /cloud/
+        } else {
+            printFilePath = fullPath;
         }
-        filePath = path.join(SAVE_DIR, filename);
+    }
+    // Legacy/Filename only
+    else if (filename) {
+        // If filename is "web_..." (legacy), strip it
+        const cleanName = filename.replace(/^web_/, '');
+        printFilePath = path.join(SAVE_DIR, cleanName);
     }
 
-    console.log(`[PRINT] Požadavek na tisk: ${path.basename(filePath)} (${filePath})`);
+    console.log(`[PRINT] Požadavek: ${filename || relativePath}`);
+    console.log(`        -> Originál: ${printFilePath}`);
 
-    if (!fs.existsSync(filePath)) {
-        console.error(`[PRINT] Soubor neexistuje: ${filePath}`);
-        // Fallback: If we looked in SAVE_DIR and failed, try BASE_PHOTOS_DIR just in case
-        if (!relativePath && SAVE_DIR !== BASE_PHOTOS_DIR) {
-            const fallbackPath = path.join(BASE_PHOTOS_DIR, filename);
-            if (fs.existsSync(fallbackPath)) {
-                console.log(`[PRINT] Nalezeno v fallback umístění: ${fallbackPath}`);
-                filePath = fallbackPath;
-            } else {
-                return res.status(404).json({ success: false, error: 'File not found' });
-            }
+    if (!fs.existsSync(printFilePath)) {
+        // Fallback: Try printing the cloud version if master missing?
+        const fallback = relativePath ? path.join(BASE_PHOTOS_DIR, relativePath) : '';
+        if (fs.existsSync(fallback)) {
+            console.log("⚠️ Originál nenalezen, tisknu Cloud verzi.");
+            printFilePath = fallback;
         } else {
-            return res.status(404).json({ success: false, error: 'File not found' });
+            return res.status(404).json({ success: false, error: 'Original file not found' });
         }
     }
 
     // --- KONFIGURACE TISKÁRNY ---
-    // Přesný název tiskárny ve Windows. Pokud neexistuje, použije se výchozí.
     const TARGET_PRINTER = "Canon SELPHY CP1500";
+    const printCmd = `powershell -ExecutionPolicy Bypass -File "${path.join(__dirname, 'print-photo.ps1')}" -ImagePath "${printFilePath}" -PrinterName "${TARGET_PRINTER}"`;
 
-    const printCmd = `powershell -ExecutionPolicy Bypass -File "${path.join(__dirname, 'print-photo.ps1')}" -ImagePath "${filePath}" -PrinterName "${TARGET_PRINTER}"`;
     exec(printCmd, (error, stdout, stderr) => {
-        if (error) {
-            console.error('[PRINT] Chyba spuštění tisku:', error);
-            console.error(stderr);
-        } else {
-            console.log('[PRINT] Odesláno do fronty.', stdout);
-        }
+        if (error) console.error('[PRINT] Chyba:', error);
+        else console.log('[PRINT] Odesláno.', stdout);
     });
+
     res.json({ success: true, message: 'Odesláno na tisk' });
 });
 
@@ -451,6 +540,16 @@ function startCommandPolling() {
                 });
             }
 
+            if ((command === 'CAPTURE' || command === 'TRIGGER') && params) {
+                console.log(`[COMMAND] 📸 Požadavek na focení z webu!`);
+                // Trigger DCC
+                try {
+                    http.get(getDccApiUrl(), (res) => {
+                        console.log(`[COMMAND] DCC Triggered: ${res.statusCode}`);
+                    }).on('error', (e) => console.error("DCC Trigger fail", e.message));
+                } catch (e) { console.error("Trigger Error", e); }
+            }
+
         } catch (e) {
             // Nechceme spamovat logy chybami připojení
             if (e.cause && e.cause.code === 'ECONNREFUSED') return;
@@ -459,3 +558,46 @@ function startCommandPolling() {
     }, 3000);
 }
 
+function resizeImagePowershell(inputPath, outputPath, maxSize = 1600) {
+    return new Promise((resolve, reject) => {
+        const script = `
+Add-Type -AssemblyName System.Drawing
+$img = [System.Drawing.Image]::FromFile('${inputPath}')
+$ratio = $img.Width / $img.Height
+$newW = ${maxSize}
+$newH = ${maxSize}
+
+if ($img.Width -gt $img.Height) {
+    $newH = [Math]::Round($newW / $ratio)
+} else {
+    $newW = [Math]::Round($newH * $ratio)
+}
+
+$newImg = new-object System.Drawing.Bitmap($newW, $newH)
+$graph = [System.Drawing.Graphics]::FromImage($newImg)
+$graph.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+$graph.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+$graph.DrawImage($img, 0, 0, $newW, $newH)
+$img.Dispose()
+
+$newImg.Save('${outputPath}', [System.Drawing.Imaging.ImageFormat]::Jpeg)
+$newImg.Dispose()
+$graph.Dispose()
+`;
+
+        const ps = spawn('powershell', ['-NoProfile', '-Command', script]);
+
+        ps.on('close', (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`PowerShell exited with code ${code}`));
+        });
+
+        ps.on('error', (err) => reject(err));
+
+        // Timeout 10s
+        setTimeout(() => {
+            ps.kill();
+            reject(new Error('PowerShell Timeout'));
+        }, 10000);
+    });
+}

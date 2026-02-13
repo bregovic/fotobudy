@@ -130,54 +130,73 @@ function uploadToCloud(filePath, filename) {
 async function runSyncCycle() {
     const syncMap = loadSyncMap();
 
-    // 1. Najít všechny editované fotky (finální výstupy)
-    const sourceFiles = fs.readdirSync(PHOTOS_DIR)
-        .filter(f => {
-            const lower = f.toLowerCase();
-            return (lower.startsWith('web_edited_') || lower.startsWith('edited_')) &&
-                (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) &&
-                !lower.startsWith('print_');
-        });
+    // 1. Najít všechny soubory ve složkách CLOUD
+    const filesToSync = [];
+
+    // a) Root Cloud
+    if (fs.existsSync(CLOUD_DIR)) {
+        const files = fs.readdirSync(CLOUD_DIR).filter(f => f.match(/\.(jpg|jpeg|png)$/i));
+        files.forEach(f => filesToSync.push({
+            fullPath: path.join(CLOUD_DIR, f),
+            filename: f,
+            relPath: `cloud/${f}`
+        }));
+    }
+
+    // b) Event Clouds
+    const eventFolders = fs.readdirSync(PHOTOS_DIR).filter(f => {
+        const full = path.join(PHOTOS_DIR, f);
+        return fs.statSync(full).isDirectory() && f !== 'cloud';
+    });
+
+    for (const evt of eventFolders) {
+        const evtCloud = path.join(PHOTOS_DIR, evt, 'cloud');
+        if (fs.existsSync(evtCloud)) {
+            const files = fs.readdirSync(evtCloud).filter(f => f.match(/\.(jpg|jpeg|png)$/i));
+            files.forEach(f => filesToSync.push({
+                fullPath: path.join(evtCloud, f),
+                filename: f,
+                relPath: `${evt}/cloud/${f}`
+            }));
+        }
+    }
 
     let created = 0;
     let uploaded = 0;
     let errors = 0;
 
-    for (const filename of sourceFiles) {
-        const sourcePath = path.join(PHOTOS_DIR, filename);
-        const cloudFilename = `cloud_${filename}`;
-        const cloudPath = path.join(CLOUD_DIR, cloudFilename);
+    for (const fileObj of filesToSync) {
+        const { fullPath, filename, relPath } = fileObj;
 
-        // 2. Vytvořit cloud verzi pokud neexistuje
-        if (!fs.existsSync(cloudPath)) {
-            try {
-                await optimizeForCloud(sourcePath, cloudPath);
-                const sizeKB = Math.round(fs.statSync(cloudPath).size / 1024);
-                console.log(`[CLOUD-SYNC] ✅ Vytvořeno: ${cloudFilename} (${sizeKB}KB)`);
-                created++;
-            } catch (e) {
-                console.error(`[CLOUD-SYNC] ❌ Chyba optimalizace ${filename}:`, e.message);
-                errors++;
-                continue;
-            }
-        }
+        // Skip hidden/temp
+        if (filename.startsWith('.')) continue;
 
         // 3. Uploadovat pokud není v sync_map
-        if (!syncMap.synced[cloudFilename]) {
+        // Use relative path as key to be unique across events
+        const syncKey = relPath; // "event/cloud/img.jpg"
+
+        if (!syncMap.synced[syncKey]) {
             try {
-                const result = await uploadToCloud(cloudPath, cloudFilename);
-                syncMap.synced[cloudFilename] = {
+                // Upload logic needs to send the file content
+                // We use existing uploadToCloud function
+
+                // For API compatibility: The API might expect just a filename in Content-Disposition.
+                // But we want to preserve uniqueness.
+                // Let's send the filename as is. The server will generate an ID.
+                const result = await uploadToCloud(fullPath, filename);
+
+                syncMap.synced[syncKey] = {
                     cloudId: result.id,
                     cloudUrl: result.url,
                     syncedAt: new Date().toISOString(),
-                    localPath: sourcePath,
-                    sizeKB: Math.round(fs.statSync(cloudPath).size / 1024)
+                    localPath: fullPath,
+                    sizeKB: Math.round(fs.statSync(fullPath).size / 1024)
                 };
-                console.log(`[CLOUD-SYNC] ☁️ Nahráno: ${cloudFilename}`);
+                console.log(`[CLOUD-SYNC] ☁️ Nahráno: ${filename} -> ${result.url}`);
                 uploaded++;
                 saveSyncMap(syncMap);
             } catch (e) {
-                console.error(`[CLOUD-SYNC] ❌ Chyba uploadu ${cloudFilename}:`, e.message);
+                console.error(`[CLOUD-SYNC] ❌ Chyba uploadu ${filename}:`, e.message);
                 errors++;
             }
         }

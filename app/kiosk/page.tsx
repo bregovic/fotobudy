@@ -491,18 +491,20 @@ const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail
     return (
         <div className="absolute inset-0 z-50 bg-slate-950 flex flex-col animate-in slide-in-from-bottom-10 fade-in duration-200">
             {/* Header */}
-            <div className="flex items-center justify-between p-6 bg-slate-900 border-b border-slate-800 shadow-xl z-10">
-                <div className="flex items-center gap-4">
-                    <h2 className="text-3xl font-bold text-white flex items-center gap-3"><ImageIcon className="text-purple-400" /> Galerie</h2>
-                    <span className="bg-slate-800 text-slate-400 px-3 py-1 rounded-full text-xs font-mono">{photos.length} fotek</span>
+            <div className="flex flex-col md:flex-row items-center justify-between p-4 md:p-6 bg-slate-900 border-b border-slate-800 shadow-xl z-10 gap-4">
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-between md:justify-start">
+                    <div className="flex items-center gap-3">
+                        <h2 className="text-xl md:text-3xl font-bold text-white flex items-center gap-2 md:gap-3"><ImageIcon className="text-purple-400 w-6 h-6 md:w-8 md:h-8" /> Galerie</h2>
+                        <span className="bg-slate-800 text-slate-400 px-2 py-1 md:px-3 rounded-full text-[10px] md:text-xs font-mono whitespace-nowrap">{photos.length} fotek</span>
+                    </div>
 
                     {/* Event Selector */}
                     {events && (
-                        <div className="relative group ml-4">
+                        <div className="relative group ml-0 md:ml-4 flex-1 md:flex-none">
                             <select
                                 value={selectedEventId || ''}
                                 onChange={(e) => onEventChange(e.target.value)}
-                                className="appearance-none bg-slate-800 border border-slate-700 hover:border-slate-500 text-white pl-4 pr-10 py-2 rounded-full cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-sm"
+                                className="appearance-none w-full md:w-auto bg-slate-800 border border-slate-700 hover:border-slate-500 text-white pl-3 pr-8 py-1.5 md:py-2 rounded-full cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-xs md:text-sm"
                             >
                                 <option value="">Aktuální akce</option>
                                 {events.map((ev: any) => (
@@ -511,22 +513,22 @@ const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail
                                     </option>
                                 ))}
                             </select>
-                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" size={14} />
+                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" size={12} />
                         </div>
                     )}
                 </div>
-                <div className="flex gap-4">
+                <div className="flex gap-2 w-full md:w-auto justify-end overflow-x-auto pb-1 md:pb-0 scrollbar-hide">
                     {selectedIds.length === 1 && (
-                        <button onClick={() => onEdit(selectedIds[0])} className="bg-pink-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-pink-500 transition-colors shadow-lg shadow-pink-900/20"><Palette size={20} /> Upravit</button>
+                        <button onClick={() => onEdit(selectedIds[0])} className="bg-pink-600 text-white px-3 py-2 md:px-6 md:py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-pink-500 transition-colors shadow-lg shadow-pink-900/20 whitespace-nowrap text-xs md:text-base"><Palette size={16} className="md:w-5 md:h-5" /> <span className="hidden md:inline">Upravit</span></button>
                     )}
                     {selectedIds.length > 0 && (
                         <>
-                            <button onClick={onDelete} className="bg-red-900/50 text-red-200 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-red-900 transition-colors"><Trash2 size={20} /> Smazat ({selectedIds.length})</button>
-                            <button onClick={onPrint} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20"><Printer size={20} /> Tisk ({selectedIds.length})</button>
-                            <button onClick={onEmail} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-900/20"><Mail size={20} /> Email ({selectedIds.length})</button>
+                            <button onClick={onDelete} className="bg-red-900/50 text-red-200 px-3 py-2 md:px-6 md:py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-red-900 transition-colors whitespace-nowrap text-xs md:text-base"><Trash2 size={16} className="md:w-5 md:h-5" /> <span className="hidden md:inline">Smazat</span> ({selectedIds.length})</button>
+                            <button onClick={onPrint} className="bg-blue-600 text-white px-3 py-2 md:px-6 md:py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20 whitespace-nowrap text-xs md:text-base"><Printer size={16} className="md:w-5 md:h-5" /> <span className="hidden md:inline">Tisk</span> ({selectedIds.length})</button>
+                            <button onClick={onEmail} className="bg-indigo-600 text-white px-3 py-2 md:px-6 md:py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-900/20 whitespace-nowrap text-xs md:text-base"><Mail size={16} className="md:w-5 md:h-5" /> <span className="hidden md:inline">Email</span> ({selectedIds.length})</button>
                         </>
                     )}
-                    <button onClick={onClose} className="bg-slate-800 text-white p-3 rounded-full hover:bg-slate-700 transition-colors"><X size={28} /></button>
+                    <button onClick={onClose} className="bg-slate-800 text-white p-2 md:p-3 rounded-full hover:bg-slate-700 transition-colors flex-shrink-0"><X size={20} className="md:w-7 md:h-7" /></button>
                 </div>
             </div>
 
@@ -787,7 +789,7 @@ export default function KioskPage() {
     const [streamLog, setStreamLog] = useState<string[]>([]);
     // Removed duplicate assets definition
     const [isPickingColor, setIsPickingColor] = useState(false);
-    const [streamToken, setStreamToken] = useState(Date.now());
+    const [streamToken, setStreamToken] = useState(0); // init with 0 to avoid hydration mismatch
 
     // --- EVENT LOGIC ---
     const [events, setEvents] = useState<any[]>([]);
@@ -797,6 +799,21 @@ export default function KioskPage() {
     // Tech Auth for Modal
     const [techAuth, setTechAuth] = useState(false);
     const [techPasswordInput, setTechPasswordInput] = useState('');
+
+    // Environment Check (Moved here to be available for scanPorts)
+    const [isLocal, setIsLocal] = useState(false);
+
+    useEffect(() => {
+        const h = window.location.hostname;
+        const check = typeof window !== 'undefined' && (h === 'localhost' || h === '127.0.0.1');
+        console.log(`[ENV] Hostname: ${h}, isLocal: ${check}`);
+        setIsLocal(check);
+        if (!check) {
+            setIsScanning(false);
+            setActivePort(null);
+            setCloudStreamEnabled(false);
+        }
+    }, []);
 
     const loadEvents = () => {
         fetch('/api/event')
@@ -888,6 +905,13 @@ export default function KioskPage() {
 
         const scanPorts = async () => {
             if (!mounted) return;
+
+            // On cloud, don't scan local ports (prevents console errors)
+            if (!isLocal) {
+                setIsScanning(false);
+                return;
+            }
+
             setIsScanning(true);
 
             // Prioritize Bridge (5555), then others
@@ -895,8 +919,11 @@ export default function KioskPage() {
 
             if (candidates.length === 0 || failedPorts.length > 0) {
                 try {
-                    fetch(`http://${DEFAULT_IP}:5520/?cmd=LiveView_Show`, { mode: 'no-cors' }).catch(() => { });
-                    fetch(`http://${DEFAULT_IP}:5513/?cmd=LiveView_Show`, { mode: 'no-cors' }).catch(() => { });
+                    // Only try to wake up if local
+                    if (isLocal) {
+                        fetch(`http://${DEFAULT_IP}:5520/?cmd=LiveView_Show`, { mode: 'no-cors' }).catch(() => { });
+                        fetch(`http://${DEFAULT_IP}:5513/?cmd=LiveView_Show`, { mode: 'no-cors' }).catch(() => { });
+                    }
                 } catch (e) { }
 
                 setFailedPorts([]);
@@ -927,11 +954,16 @@ export default function KioskPage() {
         };
         scanPorts();
         return () => { mounted = false; clearInterval(resetInterval); };
-    }, [failedPorts]);
+    }, [failedPorts, isLocal]);
+
+    // Fix Hydration Mismatch
+    const [isClient, setIsClient] = useState(false);
+    useEffect(() => setIsClient(true), []);
 
     // Stream URLs
     const getDisplayUrl = () => {
-        const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+        if (!isClient) return ''; // SSR safe
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         if (isLocal && activePort) {
             let path = '/liveview.jpg';
             if (activePort === 5555) path = '/stream.mjpg';
@@ -944,9 +976,10 @@ export default function KioskPage() {
     };
     const [cloudTick, setCloudTick] = useState(0);
     useEffect(() => {
-        const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+        if (!isClient) return;
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         if (!isLocal) { const i = setInterval(() => setCloudTick(Date.now()), 200); return () => clearInterval(i); }
-    }, []);
+    }, [isClient]);
 
     // Auto-restart LiveView when returning to idle
     useEffect(() => {
@@ -958,7 +991,14 @@ export default function KioskPage() {
             return () => clearTimeout(t);
         }
     }, [status]);
-    const finalStreamUrl = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' ? `/api/stream/snapshot?t=${cloudTick}` : getDisplayUrl();
+
+    // Calculate final URL only on client to avoid hydration mismatch
+    const finalStreamUrl = isClient ? (
+        (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+            ? `/api/stream/snapshot?t=${cloudTick}`
+            : getDisplayUrl()
+    ) : '';
+
 
     // Stream Status (Bridge now handles cloud upload)
     useEffect(() => {
@@ -1246,33 +1286,20 @@ export default function KioskPage() {
 
     // --- GALLERY LOGIC END ---
 
-    // Environment Check
-    const [isLocal, setIsLocal] = useState(true);
-
-    useEffect(() => {
-        const h = window.location.hostname;
-        const check = typeof window !== 'undefined' && (h === 'localhost' || h === '127.0.0.1');
-        console.log(`[ENV] Hostname: ${h}, isLocal: ${check}`);
-        setIsLocal(check);
-        if (!check) {
-            setIsScanning(false);
-            setActivePort(null);
-            setCloudStreamEnabled(false);
-        }
-    }, []);
+    // Environment Check moved up
 
     // ... (existing code)
 
     return (
         <div className="relative w-full h-full bg-slate-950 overflow-hidden flex flex-col items-center justify-center select-none">
             {/* Debug / Cloud Indicator */}
-            {!isLocal && <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-blue-600/50 px-3 py-1 rounded-full text-[10px] font-bold text-white z-[60] backdrop-blur-sm pointer-events-none">☁️ CLOUD VIEW</div>}
+            {isClient && !isLocal && <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-blue-600/50 px-3 py-1 rounded-full text-[10px] font-bold text-white z-[60] backdrop-blur-sm pointer-events-none">☁️ CLOUD VIEW</div>}
 
             {/* Layers */}
             <div className="absolute inset-0 bg-black flex items-center justify-center">
                 {status === 'processing' ? <div className="text-white flex flex-col items-center animate-pulse"><RefreshCw className="animate-spin mb-4" size={48} /><span className="text-2xl font-bold">Zpracovávám...</span></div>
                     : status === 'review' && lastPhoto ? <img src={lastPhoto} className="w-full h-full object-contain bg-slate-900" />
-                        : <div className="w-full h-full relative flex items-center justify-center"><LiveView streamUrl={finalStreamUrl} isBW={sessionSettings.isBW} isScanning={isScanning} error={isLocal && !isScanning && !activePort} className="w-full h-full object-contain" onRestart={restartLiveView} onStreamError={() => { console.warn("Stream drop, retrying..."); setStreamToken(Date.now()); }} printWidth={sessionSettings.printWidth} printHeight={sessionSettings.printHeight} /></div>}
+                        : <div className="w-full h-full relative flex items-center justify-center"><LiveView streamUrl={finalStreamUrl} isBW={sessionSettings.isBW} isScanning={isScanning} error={isClient && isLocal && !isScanning && !activePort} className="w-full h-full object-contain" onRestart={restartLiveView} onStreamError={() => { console.warn("Stream drop, retrying..."); setStreamToken(Date.now()); }} printWidth={sessionSettings.printWidth} printHeight={sessionSettings.printHeight} /></div>}
             </div>
 
             {/* Legacy Overlay Removed */}
@@ -1572,48 +1599,48 @@ export default function KioskPage() {
 
 
             {/* MAIN CONTROLS */}
-            <div className="absolute bottom-12 z-30 w-full flex justify-center p-4">
-                <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-full p-4 flex items-center shadow-2xl scale-125 origin-bottom">
-                    <div className="flex gap-6 px-4 border-r border-white/10 pr-6">
-                        <button className="flex flex-col items-center gap-1 text-white opacity-80 hover:scale-110 transition-all text-[10px] uppercase font-bold tracking-widest hover:text-blue-400" onClick={() => setShowSettings(true)}><Settings size={24} /> <span>Nastavení</span></button>
-                        <button className="flex flex-col items-center gap-1 text-white opacity-80 hover:scale-110 transition-all text-[10px] uppercase font-bold tracking-widest hover:text-purple-400" onClick={openGallery}><ImageIcon size={24} /> <span>Galerie</span></button>
+            <div className="absolute bottom-6 md:bottom-12 z-30 w-full flex justify-center p-2 md:p-4">
+                <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-full p-2 md:p-4 flex items-center shadow-2xl scale-90 md:scale-125 origin-bottom max-w-full">
+                    <div className="flex gap-2 md:gap-6 px-2 md:px-4 border-r border-white/10 pr-2 md:pr-6">
+                        <button className="flex flex-col items-center gap-1 text-white opacity-80 hover:scale-110 transition-all text-[8px] md:text-[10px] uppercase font-bold tracking-widest hover:text-blue-400" onClick={() => setShowSettings(true)}><Settings size={20} className="md:w-6 md:h-6" /> <span>Nastavení</span></button>
+                        <button className="flex flex-col items-center gap-1 text-white opacity-80 hover:scale-110 transition-all text-[8px] md:text-[10px] uppercase font-bold tracking-widest hover:text-purple-400" onClick={openGallery}><ImageIcon size={20} className="md:w-6 md:h-6" /> <span>Galerie</span></button>
                     </div>
-                    <div className="mx-8 relative">
+                    <div className="mx-2 md:mx-8 relative">
                         {status === 'review' ? (
-                            <button className="w-24 h-24 rounded-full border-4 border-red-500 flex items-center justify-center bg-red-500/20 hover:scale-105 transition-all shadow-red-900/50 shadow-lg" onClick={() => { setStatus('idle'); setLastPhoto(null); setTimeout(restartLiveView, 100); }}><RefreshCw size={40} color="#fff" /></button>
+                            <button className="w-16 h-16 md:w-24 md:h-24 rounded-full border-4 border-red-500 flex items-center justify-center bg-red-500/20 hover:scale-105 transition-all shadow-red-900/50 shadow-lg" onClick={() => { setStatus('idle'); setLastPhoto(null); setTimeout(restartLiveView, 100); }}><RefreshCw size={30} className="md:w-10 md:h-10" color="#fff" /></button>
                         ) : (
-                            <button className="w-28 h-28 rounded-full border-[6px] border-white flex items-center justify-center bg-white/10 hover:bg-white/30 transition-all active:scale-95 shadow-lg shadow-white/10" onClick={startCountdown} disabled={status !== 'idle'}><div className="w-20 h-20 bg-white rounded-full shadow-inner"></div></button>
+                            <button className="w-20 h-20 md:w-28 md:h-28 rounded-full border-[6px] border-white flex items-center justify-center bg-white/10 hover:bg-white/30 transition-all active:scale-95 shadow-lg shadow-white/10" onClick={startCountdown} disabled={status !== 'idle'}><div className="w-14 h-14 md:w-20 md:h-20 bg-white rounded-full shadow-inner"></div></button>
                         )}
                     </div>
-                    <div className="flex gap-6 px-4 border-l border-white/10 pl-6">
+                    <div className="flex gap-3 md:gap-6 px-2 md:px-4 border-l border-white/10 pl-2 md:pl-6">
                         <button
-                            className={`flex flex-col items-center gap-1 transition-all text-[10px] uppercase font-bold tracking-widest ${status === 'review' ? 'text-white opacity-80 hover:scale-110 hover:text-green-400' : 'text-slate-500 cursor-not-allowed'}`}
+                            className={`flex flex-col items-center gap-1 transition-all text-[8px] md:text-[10px] uppercase font-bold tracking-widest ${status === 'review' ? 'text-white opacity-80 hover:scale-110 hover:text-green-400' : 'text-slate-500 cursor-not-allowed hidden md:flex'}`} // Hidden print on mobile when idle to save space? Keep checks
                             disabled={status !== 'review'}
                             onClick={printSelected}
                         >
-                            {isUploading ? <RefreshCw className="animate-spin" size={24} /> : <Printer size={24} />}
+                            {isUploading ? <RefreshCw className="animate-spin md:w-6 md:h-6" size={20} /> : <Printer size={20} className="md:w-6 md:h-6" />}
                             <span>{isUploading ? 'Ukládám' : 'Tisk'}</span>
                         </button>
 
                         <button
-                            className={`flex flex-col items-center gap-1 transition-all text-[10px] uppercase font-bold tracking-widest ${status === 'review' ? 'text-white opacity-80 hover:scale-110 hover:text-yellow-400' : 'text-slate-500 cursor-not-allowed'}`}
+                            className={`flex flex-col items-center gap-1 transition-all text-[8px] md:text-[10px] uppercase font-bold tracking-widest ${status === 'review' ? 'text-white opacity-80 hover:scale-110 hover:text-yellow-400' : 'text-slate-500 cursor-not-allowed'}`}
                             disabled={status !== 'review'}
                             onClick={() => setShowEmailModal(true)}
                         >
-                            {isUploading ? <RefreshCw className="animate-spin" size={24} /> : <Mail size={24} />}
+                            {isUploading ? <RefreshCw className="animate-spin md:w-6 md:h-6" size={20} /> : <Mail size={20} className="md:w-6 md:h-6" />}
                             <span>{isUploading ? 'Ukládám' : 'Email'}</span>
                         </button>
 
                         {/* TIMER SELECTOR */}
                         <div className="relative">
                             <button
-                                className={`flex flex-col items-center gap-1 transition-all text-[10px] uppercase font-bold tracking-widest ${status === 'idle' ? 'text-white opacity-80 hover:scale-110 hover:text-cyan-400' : 'text-slate-500 cursor-not-allowed'}`}
+                                className={`flex flex-col items-center gap-1 transition-all text-[8px] md:text-[10px] uppercase font-bold tracking-widest ${status === 'idle' ? 'text-white opacity-80 hover:scale-110 hover:text-cyan-400' : 'text-slate-500 cursor-not-allowed'}`}
                                 disabled={status !== 'idle'}
                                 onClick={() => setShowTimerMenu(!showTimerMenu)}
                             >
                                 <div className="relative">
-                                    <Timer size={24} />
-                                    <span className="absolute -top-2 -right-2 bg-cyan-500 text-black text-[9px] font-bold px-1 rounded-full normal-case">{timerSeconds}s</span>
+                                    <Timer size={20} className="md:w-6 md:h-6" />
+                                    <span className="absolute -top-2 -right-2 bg-cyan-500 text-black text-[8px] md:text-[9px] font-bold px-1 rounded-full normal-case">{timerSeconds}s</span>
                                 </div>
                                 <span>Časovač</span>
                             </button>

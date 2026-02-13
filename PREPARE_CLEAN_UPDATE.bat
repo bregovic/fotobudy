@@ -37,6 +37,9 @@ copy /Y "PREPARE_PATCH.bat" "Update_Package_Final"
 copy /Y "public\DEBUG_GALLERY.html" "Update_Package_Final"
 
 copy /Y "FORCE_RESTART.bat" "Update_Package_Final"
+copy /Y "SYNCHRONIZOVAT_FOTKY.bat" "Update_Package_Final"
+copy /Y "scripts\manual_sync.js" "Update_Package_Final\scripts"
+copy /Y "scripts\service_sync.js" "Update_Package_Final\scripts"
 
 echo [INFO] Vytvarim Assets adresare...
 mkdir "Update_Package_Final\public\assets\backgrounds" 2>nul
@@ -45,6 +48,7 @@ mkdir "Update_Package_Final\public\assets\stickers" 2>nul
 (
 echo Navod k instalaci:
 echo 0. POKUD MATE PROBLEMY, spustte FORCE_RESTART.bat
+echo 0B. Pro nahrani starych fotek spustte SYNCHRONIZOVAT_FOTKY.bat
 echo 1. Smazte settings.local.json na Kiosku.
 echo 2. Spustte INSTALL_FAST.bat
 echo 3. Spustte SPUSTIT_KIOSK_SPRAVNE.bat

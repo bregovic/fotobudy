@@ -34,40 +34,62 @@ export async function GET(req: NextRequest) {
             return NextResponse.json([]);
         }
 
-        // Funkce pro rekurzivni hledani
-        const scan = (dir: string, depth: number) => {
-            if (depth > 2) return;
+        // Funkce pro rekurzivni hledani (Scan ALL, prioritize CLOUD)
+        const photosMap = new Map<string, any>();
+
+        const scan = (dir: string) => {
             try {
                 const list = fs.readdirSync(dir, { withFileTypes: true });
+
                 for (const entry of list) {
                     const fullPath = path.join(dir, entry.name);
 
                     if (entry.isDirectory()) {
-                        scan(fullPath, depth + 1);
+                        scan(fullPath); // Recurse everywhere
                     } else if (entry.isFile()) {
                         const lower = entry.name.toLowerCase();
                         if ((lower.endsWith('.jpg') || lower.endsWith('.jpeg')) && !lower.startsWith('.')) {
-                            // Pouze web verze, zadne printy
                             if (lower.startsWith('print_')) continue;
 
+                            const isCloud = fullPath.includes(path.sep + 'cloud' + path.sep) || fullPath.includes('/cloud/');
                             const stats = fs.statSync(fullPath);
-                            const relativePath = path.relative(path.join(process.cwd(), 'public'), fullPath);
-                            const url = '/' + relativePath.replace(/\\/g, '/');
+                            const relative = path.relative(path.join(process.cwd(), 'public'), fullPath);
+                            const url = '/' + relative.replace(/\\/g, '/');
 
-                            allPhotos.push({
-                                id: entry.name, // Use filename as ID
+                            const photoObj = {
+                                id: entry.name,
                                 url: url,
                                 createdAt: new Date(stats.mtimeMs),
                                 isEdited: lower.startsWith('edited_'),
-                                originalName: lower.startsWith('edited_') ? lower.replace('edited_', '') : lower
-                            });
+                                originalName: entry.name,
+                                isCloud: isCloud
+                            };
+
+                            // Logic: 
+                            // 1. If we already have a CLOUD version in map, ignore this original.
+                            // 2. If this IS a cloud version, overwrite whatever is in map.
+                            // 3. If map is empty or has original, and this is original, keep/update logic (usually keeping first found is fine, or newest)
+
+                            const existing = photosMap.get(entry.name);
+                            if (isCloud) {
+                                // Always prefer cloud version
+                                photosMap.set(entry.name, photoObj);
+                            } else {
+                                // Only add original if we don't have a cloud version yet
+                                if (!existing || !existing.isCloud) {
+                                    photosMap.set(entry.name, photoObj);
+                                }
+                            }
                         }
                     }
                 }
-            } catch (e) { /* Ignore EPERM/ENOENT */ }
+            } catch (e) { }
         };
 
-        scan(baseDir, 0);
+        scan(baseDir);
+
+        // Convert Map to Array
+        Array.from(photosMap.values()).forEach(p => allPhotos.push(p));
 
         // [SMART FILTER] - Hide originals if edited version exists
         const editedMap = new Set<string>();
