@@ -541,13 +541,23 @@ function startCommandPolling() {
             }
 
             if ((command === 'CAPTURE' || command === 'TRIGGER') && params) {
-                console.log(`[COMMAND] 📸 Požadavek na focení z webu!`);
-                // Trigger DCC
+                console.log(`[COMMAND] 📸 Požadavek na focení z webu! (Delay: ${params.delay || 0})`);
+
+                // Use local /shoot endpoint to handle delay + timer state
                 try {
-                    http.get(getDccApiUrl(), (res) => {
-                        console.log(`[COMMAND] DCC Triggered: ${res.statusCode}`);
-                    }).on('error', (e) => console.error("DCC Trigger fail", e.message));
-                } catch (e) { console.error("Trigger Error", e); }
+                    const req = http.request({
+                        hostname: 'localhost',
+                        port: PORT,
+                        path: '/shoot',
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    }, (res) => { res.resume(); });
+
+                    req.write(JSON.stringify({ delay: params.delay || 0 }));
+                    req.end();
+                } catch (e) {
+                    console.error("Trigger Error", e);
+                }
             }
 
         } catch (e) {

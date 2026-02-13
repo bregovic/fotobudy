@@ -1085,7 +1085,7 @@ export default function KioskPage() {
                             return;
                         }
 
-                        console.log("🔍 Poll detected new ID:", data.latest.id, "URL:", data.latest.url, "Status:", status);
+                        console.log("🔍 Poll detected new ID:", data.latest.id, "Last:", lastProcessedIdRef.current, "URL:", data.latest.url, "Status:", status);
                         lastProcessedIdRef.current = data.latest.id; // Mark as seen immediately
 
                         // 2. If it's a new ORIGINAL photo, process it (unless we are already reviewing one).
@@ -1187,7 +1187,18 @@ export default function KioskPage() {
         // This prevents conflicting states (local vs server).
 
         try {
-            // Use Bridge Server (Port 5555) for synchronized shooting
+            if (!isLocal) {
+                // [WEB MODE] Send trigger command to server DB
+                console.log(`📸 WEB TRIGGER: Sending CAPTURE command to server (Delay: ${delay}ms)`);
+                await fetch('/api/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cmd: 'CAPTURE', params: { delay } })
+                });
+                return;
+            }
+
+            // [LOCAL MODE] Use Bridge Server (Port 5555) for synchronized shooting
             // Even if camera is on another port, Bridge handles it.
             const url = `http://${cameraIp}:5555/shoot`;
 
@@ -1302,7 +1313,29 @@ export default function KioskPage() {
             <div className="absolute inset-0 bg-black flex items-center justify-center">
                 {status === 'processing' ? <div className="text-white flex flex-col items-center animate-pulse"><RefreshCw className="animate-spin mb-4" size={48} /><span className="text-2xl font-bold">Zpracovávám...</span></div>
                     : status === 'review' && lastPhoto ? <img src={lastPhoto} className="w-full h-full object-contain bg-slate-900" />
-                        : <div className="w-full h-full relative flex items-center justify-center"><LiveView streamUrl={finalStreamUrl} isBW={sessionSettings.isBW} isScanning={isScanning} error={isClient && isLocal && !isScanning && !activePort} className="w-full h-full object-contain" onRestart={restartLiveView} onStreamError={() => { console.warn("Stream drop, retrying..."); setStreamToken(Date.now()); }} printWidth={sessionSettings.printWidth} printHeight={sessionSettings.printHeight} /></div>}
+                        : <div className="w-full h-full relative flex items-center justify-center">
+                            <LiveView
+                                streamUrl={finalStreamUrl}
+                                isBW={sessionSettings.isBW}
+                                isScanning={isScanning}
+                                error={isClient && isLocal && !isScanning && !activePort}
+                                className="w-full h-full object-contain"
+                                onRestart={restartLiveView}
+                                onStreamError={() => { console.warn("Stream drop, retrying..."); setStreamToken(Date.now()); }}
+                                onClick={startCountdown}
+                                printWidth={sessionSettings.printWidth}
+                                printHeight={sessionSettings.printHeight}
+                            />
+
+                            {/* COUNTDOWN OVERLAY */}
+                            {countdownValue !== null && countdownValue > 0 && (
+                                <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
+                                    <div key={countdownValue} className="text-[20vw] font-bold text-white drop-shadow-[0_0_15px_rgba(0,0,0,0.8)] animate-in zoom-in duration-300">
+                                        {countdownValue}
+                                    </div>
+                                </div>
+                            )}
+                        </div>}
             </div>
 
             {/* Legacy Overlay Removed */}
