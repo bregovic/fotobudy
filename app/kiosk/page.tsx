@@ -988,8 +988,8 @@ export default function KioskPage() {
     useEffect(() => {
         if (status === 'idle') {
             const t = setTimeout(() => {
-                // If stream is offline or stuck, try to kick it
-                if (streamStatus !== 'live') restartLiveView();
+                // Always try to kick the stream when returning from review/processing
+                restartLiveView();
             }, 500);
             return () => clearTimeout(t);
         }
@@ -1328,7 +1328,7 @@ export default function KioskPage() {
                             />
 
                             {/* COUNTDOWN OVERLAY */}
-                            {countdownValue !== null && countdownValue > 0 && (
+                            {countdownValue !== null && countdownValue > 0 && !isLocal && (
                                 <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
                                     <div key={countdownValue} className="text-[20vw] font-bold text-white drop-shadow-[0_0_15px_rgba(0,0,0,0.8)] animate-in zoom-in duration-300">
                                         {countdownValue}

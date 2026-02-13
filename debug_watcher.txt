@@ -25229,3 +25229,11 @@
 [15:05:35] ✅ SLEDUJI: C:\Fotky
 [15:05:35] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
 [15:05:35] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[15:21:19] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[15:21:19] ✅ SLEDUJI: C:\Fotky
+[15:21:19] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[15:21:19] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
+[15:25:21] --- START HLÍDAČE (v3 - Strict Dedup) ---
+[15:25:21] ✅ SLEDUJI: C:\Fotky
+[15:25:21] ✅ SLEDUJI: C:\Users\Wendulka\Pictures\DigiCamControl
+[15:25:21] ✅ SLEDUJI: C:\Users\Wendulka\Pictures
