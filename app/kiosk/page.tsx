@@ -1190,6 +1190,23 @@ export default function KioskPage() {
             if (!isLocal) {
                 // [WEB MODE] Send trigger command to server DB
                 console.log(`📸 WEB TRIGGER: Sending CAPTURE command to server (Delay: ${delay}ms)`);
+
+                // 1. Simulate Visual Countdown (Web Poll cannot reach Local Bridge)
+                if (delay > 0) {
+                    setStatus('countdown');
+                    setCountdownValue(Math.ceil(delay / 1000));
+
+                    let remaining = Math.ceil(delay / 1000);
+                    const i = setInterval(() => {
+                        remaining--;
+                        setCountdownValue(remaining > 0 ? remaining : null);
+                        if (remaining <= 0) {
+                            clearInterval(i);
+                            // Timer finished, waiting for photo...
+                        }
+                    }, 1000);
+                }
+
                 await fetch('/api/command', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
