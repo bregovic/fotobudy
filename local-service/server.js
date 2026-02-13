@@ -287,12 +287,14 @@ function startBackgroundProcessing() {
                             fs.unlinkSync(tempPath);
                             console.log(`[BG] ✅ Created cloud version: ${destPath}`);
 
-                            // Inject into Live View stream for review
+                            // Inject into Live View stream for review - DISABLED (React handles preview now)
+                            /*
                             try {
                                 latestFrame = fs.readFileSync(destPath);
                                 isReviewing = true;
                                 setTimeout(() => isReviewing = false, 2000);
                             } catch (e) { }
+                            */
                         } else {
                             console.error(`[BG] ⚠️ PowerShell failed to create file (no error thrown, but file missing)`);
                         }
