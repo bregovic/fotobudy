@@ -348,10 +348,9 @@ app.get('/status', (req, res) => {
 });
 
 // --- SHOOT TRIGGER ---
-app.post('/shoot', (req, res) => {
-    let { delay } = req.body;
+// Core Shooting Logic
+function triggerShoot(delay) {
     delay = parseInt(delay) || 0;
-
     console.log(`[SHOOT] Požadavek na focení (Delay: ${delay}ms)...`);
 
     // Set Target Time implies countdown starts NOW
@@ -373,7 +372,12 @@ app.post('/shoot', (req, res) => {
         });
 
     }, delay);
+}
 
+// --- SHOOT TRIGGER ---
+app.post('/shoot', (req, res) => {
+    let { delay } = req.body;
+    triggerShoot(delay);
     res.json({ success: true, message: `Timer started (${delay}ms)` });
 });
 
@@ -544,22 +548,8 @@ function startCommandPolling() {
 
             if ((command === 'CAPTURE' || command === 'TRIGGER') && params) {
                 console.log(`[COMMAND] 📸 Požadavek na focení z webu! (Delay: ${params.delay || 0})`);
-
-                // Use local /shoot endpoint to handle delay + timer state
-                try {
-                    const req = http.request({
-                        hostname: 'localhost',
-                        port: PORT,
-                        path: '/shoot',
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                    }, (res) => { res.resume(); });
-
-                    req.write(JSON.stringify({ delay: params.delay || 0 }));
-                    req.end();
-                } catch (e) {
-                    console.error("Trigger Error", e);
-                }
+                // Direct call, no self-HTTP request
+                triggerShoot(params.delay || 0);
             }
 
         } catch (e) {
