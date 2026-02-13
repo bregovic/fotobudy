@@ -306,20 +306,25 @@ export default function GalleryPage() {
                 <div className="w-10" />
             </div>
 
-            {/* Masonry Grid */}
-            <div className="columns-2 md:columns-3 lg:columns-4 gap-6 max-w-6xl mx-auto space-y-6 block">
+            {/* Grid Layout (Chronological) */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6 max-w-6xl mx-auto">
                 {photos.map((photo) => (
                     <div
                         key={photo.id}
-                        className="break-inside-avoid bg-slate-900 rounded-xl overflow-hidden cursor-pointer hover:scale-105 transition-transform shadow-lg border border-white/5 mb-6"
+                        className="relative group bg-slate-900 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-white/5 aspect-[3/2]"
                         onClick={() => setSelectedPhoto(photo.url)}
                     >
                         <img
                             src={photo.url}
-                            className="w-full h-auto block transition-opacity duration-500"
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                             loading="lazy"
                             alt="Gallery photo"
                         />
+
+                        {/* Hover Overlay */}
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                            <ImageIcon className="text-white drop-shadow-lg transform scale-0 group-hover:scale-125 transition-all duration-300" size={32} />
+                        </div>
                     </div>
                 ))}
             </div>

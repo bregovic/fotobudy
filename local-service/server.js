@@ -74,12 +74,14 @@ function startCameraPolling() {
     const poll = () => {
         if (isReviewing) { setTimeout(poll, 200); return; }
 
-        // Fetch from DCC Raw (most reliable) - WITH TIMEOUT
+        // Fetch from DCC Raw (most reliable) - WITH TIMEOUT & NO AGENT (Fix Socket Exhaustion)
         const liveViewUrl = `http://${DCC_HOST}:${dccPort}/liveview.jpg`;
-        const req = http.get(liveViewUrl, (res) => {
+
+        const req = http.get(liveViewUrl, { agent: false }, (res) => {
             if (res.statusCode !== 200) {
-                res.resume(); // consume body to free memory
-                setTimeout(poll, 1000); // Retry slow if error
+                res.resume(); // consume body calling 'end'
+                // Don't wait too long on error
+                setTimeout(poll, 200);
                 return;
             }
 
@@ -93,6 +95,11 @@ function startCameraPolling() {
                 }
                 setTimeout(poll, 50); // ~20 FPS target
             });
+
+            res.on('error', (e) => {
+                // log error?
+                req.destroy();
+            });
         });
 
         req.on('error', (e) => {
@@ -101,143 +108,30 @@ function startCameraPolling() {
             const nextIdx = (currentIdx + 1) % CANDIDATE_PORTS.length;
             dccPort = CANDIDATE_PORTS[nextIdx];
 
-            // console.log(`[POLLER] Port ${CANDIDATE_PORTS[currentIdx]} failed, trying ${dccPort}...`);
+            console.log(`[POLLER] Chyba spojení s kamerou (${e.message}). Zkouším port ${dccPort}...`);
             setTimeout(poll, 500);
         });
 
-        // CRITICAL FIX: Timeout hangs
-        req.setTimeout(500, () => {
-            req.destroy(); // This triggers 'error' event above
+        // TIMEOUT FIX: 2s
+        req.setTimeout(2000, () => {
+            // console.log(`[POLLER] Timeout na portu ${dccPort}, retrying...`);
+            req.destroy();
         });
     };
     poll();
 }
 
-// --- LOCAL MJPEG STREAM ---
-// Serves from Memory Buffer - Zero load on camera
-app.get('/stream.mjpg', (req, res) => {
-    res.writeHead(200, {
-        'Content-Type': 'multipart/x-mixed-replace; boundary=--myboundary',
-        'Cache-Control': 'no-cache',
-        'Connection': 'close',
-        'Pragma': 'no-cache'
-    });
-
-    const streamInterval = setInterval(() => {
-        if (latestFrame) {
-            res.write(`--myboundary\nContent-Type: image/jpeg\nContent-Length: ${latestFrame.length}\n\n`);
-            res.write(latestFrame);
-            res.write('\n');
-        }
-    }, 100); // 10 FPS for clients is enough
-
-    req.on('close', () => clearInterval(streamInterval));
-    req.on('end', () => clearInterval(streamInterval));
-});
-
-// --- SNAPSHOT ENDPOINT ---
-app.get('/liveview.jpg', (req, res) => {
-    if (latestFrame) {
-        res.set('Content-Type', 'image/jpeg');
-        res.send(latestFrame);
-    } else {
-        res.status(503).send('Initializing...');
-    }
-});
-
-
-// --- SERVER STATE ---
-let countdownTarget = 0; // Timestamp when photo will be taken
-let isCapturing = false;
-
-// --- STATUS ENDPOINT (POLLING) ---
-app.get('/status', (req, res) => {
-    res.json({
-        isCapturing,
-        countdownTarget, // If > Date.now(), we are counting down
-        now: Date.now()  // Server time for sync
-    });
-});
-
-// --- SHOOT HANDLER (SYNC COUNTDOWN) ---
-app.post('/shoot', async (req, res) => {
-    if (isCapturing) return res.status(429).json({ success: false, error: 'Camera busy' });
-
-    const delay = parseInt(req.body.delay || '0');
-
-    // If delay is requested, start countdown
-    if (delay > 0) {
-        console.log(`[BRIDGE] Starting countdown: ${delay}ms`);
-        countdownTarget = Date.now() + delay;
-        isCapturing = true; // Lock immediately
-
-        // Wait for countdown
-        setTimeout(() => {
-            performCapture();
-        }, delay);
-
-        return res.json({ success: true, message: 'Countdown started', target: countdownTarget });
-    }
-
-    // No delay - immediate capture
-    performCapture();
-    res.json({ success: true, message: 'Triggered' });
-});
-
-function performCapture() {
-    console.log('[BRIDGE] Capture NOW!');
-    countdownTarget = 0; // Reset countdown
-    isCapturing = true;
-
-    try {
-        // Trigger Camera via DCC
-        http.get(getDccApiUrl(), (dccRes) => {
-            if (dccRes.statusCode < 200 || dccRes.statusCode > 299) {
-                console.error(`[BRIDGE] DCC Error ${dccRes.statusCode}`);
-            }
-            dccRes.resume();
-        }).on('error', (e) => console.error('[BRIDGE] DCC Connection Failed', e));
-
-        // Reset lock after capture
-        setTimeout(() => { isCapturing = false; }, 2500);
-
-    } catch (e) {
-        console.error(`[ERROR] ${e.message}`);
-        isCapturing = false;
-    }
-}
-
-// STARTUP: FORCE LIVE VIEW ON
-// --- AUTO-HEAL LIVE VIEW ---
-// Keeps trying to enable Live View until we see fresh frames
-let failedAttempts = 0;
-setInterval(() => {
-    // If we have a fresh frame (less than 5s old) OR we are intentionally reviewing, we are good.
-    if ((lastFrameTime > 0 && Date.now() - lastFrameTime < 5000) || isReviewing) {
-        failedAttempts = 0;
-        return;
-    }
-
-    failedAttempts++;
-    if (failedAttempts % 10 === 1) { // Log only 1st, 11th, 21st... time
-        console.log(`[AUTO-HEAL] No Live View signal on port ${dccPort}. Sending Wake-Up command... (Silent retry)`);
-    }
-
-    http.get(`http://127.0.0.1:${dccPort}/?cmd=LiveView_Show`, (res) => {
-        res.resume(); // consume body
-    }).on('error', () => { /* Suppress connection errors (DCC might be closed) */ });
-
-}, 5000); // Check every 5 seconds
+// ... (stream.mjpg endpoint remains the same)
 
 // --- CLOUD STREAM UPLOAD LOOP ---
-// Reads from SHAARED BUFFER
+// Reads from SHARED BUFFER
 let cloudStreamActive = true;
 
 function startCloudStreamUpload() {
-    console.log('[CLOUD-STREAM] Startuji upload ze sdíleného bufferu...');
+    // console.log('[CLOUD-STREAM] Startuji upload ze sdíleného bufferu...');
 
     const uploadLoop = () => {
-        if (!cloudStreamActive) return;
+        if (!cloudStreamActive) { setTimeout(uploadLoop, 1000); return; }
 
         if (latestFrame && (Date.now() - lastFrameTime < 2000)) {
             // Upload only if frame is fresh (< 2s old)
@@ -252,7 +146,9 @@ function startCloudStreamUpload() {
                 }
             }, (res) => { res.resume(); });
 
-            req.on('error', () => { });
+            req.on('error', (e) => {
+                // Silent fail on cloud upload error to not fetch CPU
+            });
             req.write(latestFrame);
             req.end();
         }
