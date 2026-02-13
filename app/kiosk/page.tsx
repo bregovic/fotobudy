@@ -800,20 +800,23 @@ export default function KioskPage() {
     const [techAuth, setTechAuth] = useState(false);
     const [techPasswordInput, setTechPasswordInput] = useState('');
 
-    // Environment Check (Moved here to be available for scanPorts)
-    const [isLocal, setIsLocal] = useState(false);
+    // Environment Check
+    const [isLocal, setIsLocal] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const h = window.location.hostname;
+            return h === 'localhost' || h === '127.0.0.1';
+        }
+        return false;
+    });
 
     useEffect(() => {
-        const h = window.location.hostname;
-        const check = typeof window !== 'undefined' && (h === 'localhost' || h === '127.0.0.1');
-        console.log(`[ENV] Hostname: ${h}, isLocal: ${check}`);
-        setIsLocal(check);
-        if (!check) {
+        console.log(`[ENV] isLocal: ${isLocal}`);
+        if (!isLocal) {
             setIsScanning(false);
             setActivePort(null);
             setCloudStreamEnabled(false);
         }
-    }, []);
+    }, [isLocal]);
 
     const loadEvents = () => {
         fetch('/api/event')
