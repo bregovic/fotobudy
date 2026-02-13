@@ -71,6 +71,13 @@ let isReviewing = false;
 function startCameraPolling() {
     console.log(`[POLLER] Starting smart camera polling (trying ${CANDIDATE_PORTS.join(', ')})...`);
 
+    // Wait for DCC to start up
+    setTimeout(() => {
+        poll();
+    }, 3000);
+
+    let consecutiveErrors = 0;
+
     const poll = () => {
         if (isReviewing) { setTimeout(poll, 200); return; }
 
@@ -80,10 +87,16 @@ function startCameraPolling() {
         const req = http.get(liveViewUrl, { agent: false }, (res) => {
             if (res.statusCode !== 200) {
                 res.resume(); // consume body calling 'end'
-                // Don't wait too long on error
-                setTimeout(poll, 200);
+                consecutiveErrors++;
+                setTimeout(poll, consecutiveErrors > 5 ? 2000 : 500);
                 return;
             }
+
+            // Success! Reset errors.
+            if (consecutiveErrors > 0) {
+                console.log(`[POLLER] Spojení navázáno na portu ${dccPort}!`);
+            }
+            consecutiveErrors = 0;
 
             const chunks = [];
             res.on('data', c => chunks.push(c));
@@ -97,28 +110,36 @@ function startCameraPolling() {
             });
 
             res.on('error', (e) => {
-                // log error?
                 req.destroy();
             });
         });
 
         req.on('error', (e) => {
-            // Switch port on error
+            // Increase error streak
+            consecutiveErrors++;
+
+            // Switch port only if not stuck in heavy error loop
             const currentIdx = CANDIDATE_PORTS.indexOf(dccPort);
             const nextIdx = (currentIdx + 1) % CANDIDATE_PORTS.length;
             dccPort = CANDIDATE_PORTS[nextIdx];
 
-            console.log(`[POLLER] Chyba spojení s kamerou (${e.message}). Zkouším port ${dccPort}...`);
-            setTimeout(poll, 500);
+            // BACKOFF STRATEGY (Prevents EADDRINUSE)
+            let retryDelay = 500;
+            if (consecutiveErrors > 5) retryDelay = 2000;  // Slow down after 5 fails
+            if (consecutiveErrors > 20) retryDelay = 5000; // Very slow if DCC is dead
+
+            if (consecutiveErrors % 10 === 0) {
+                console.log(`[POLLER] Chyba spojení (${e.code || e.message}). Retrying in ${retryDelay}ms... (Fail #${consecutiveErrors})`);
+            }
+
+            setTimeout(poll, retryDelay);
         });
 
         // TIMEOUT FIX: 2s
         req.setTimeout(2000, () => {
-            // console.log(`[POLLER] Timeout na portu ${dccPort}, retrying...`);
             req.destroy();
         });
     };
-    poll();
 }
 
 // ... (stream.mjpg endpoint remains the same)

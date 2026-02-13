@@ -31,16 +31,16 @@ export async function POST(req: NextRequest) {
             ? `A sticker design of ${prompt} on a plain white background, isolated, vector style suitable for cutout`
             : `A high quality photo background of ${prompt}, professional lighting, scenic`;
 
-        const response = await openai.images.generate({
+        const response: any = await openai.images.generate({
             model: "dall-e-3",
             prompt: finalPrompt,
             n: 1,
             size: "1024x1024",
             quality: "standard",
-            response_format: "b64_json"
+            response_format: "b64_json",
         });
 
-        const image = response.data[0].b64_json;
+        const image = response.data?.[0]?.b64_json;
         if (!image) throw new Error("No image generated");
 
         // Save
