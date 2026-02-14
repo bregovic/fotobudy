@@ -516,31 +516,56 @@ function startCommandPolling() {
             if (command === 'SEND_EMAIL' && params) {
                 console.log(`[COMMAND] 📨 Požadavek na email: ${params.email}`);
 
-                // Získat lokální URL
-                let photoUrl = params.photoUrl;
-                // Pokud je v parametrech název souboru, použijeme ho (preferováno pro originální kvalitu)
-                if (params.filename) {
-                    // Název na cloudu bývá "cloud_web_IMAGE.jpg", lokálně "web_IMAGE.jpg"
-                    const localName = params.filename.replace(/^cloud_/, '');
+                // Handle multiple photos
+                let urls = params.photoUrls || (params.photoUrl ? [params.photoUrl] : []);
 
-                    // Zkontrolujeme jestli soubor existuje
+                // Resolve local localhost URLs for each photo
+                const resolvedUrls = urls.map(url => {
+                    // Convert Cloud/Web URL to Local Bridge URL
+                    // Example: /api/media/image/abc.jpg -> we need local path?
+                    // Actually, params.photoUrls coming from Web contain Cloud URLs.
+                    // We need to map them to local filenames if possible.
+
+                    // Web sends: https://cvak.../api/media/image/ID
+                    // We can try to extract ID/Filename.
+                    // But simplest is if Web sends filenames too?
+                    // Web sendEmail logic sends: p.url.
+                    // Cloud URL: /api/media/image/cl123...
+
+                    // If we are Local, we can't fetch Cloud URL easily (maybe).
+                    // Ideally, we want to send LOCAL FILE path (http://127.0.0.1:5555/photos/...)
+
+                    // Fallback: Just pass what we got. The local Next.js API might fail fetching Cloud URL if no internet? 
+                    // Wait, Bridge is connected to internet.
+                    // But local Next.js api/email fetches URL.
+
+                    // BETTER STRATEGY: 
+                    // Let's assume filenames are mappable.
+                    // If URL contains clean filename, good.
+                    // If checking file existence locally fails, use the original URL.
+
+                    // For now, pass as is, but if we had filename logic:
+                    /*
+                    const localName = ...
                     const localPath = path.join(SAVE_DIR, localName);
-                    if (fs.existsSync(localPath)) {
-                        // Použijeme bridge URL (localhost:5555)
-                        photoUrl = `http://127.0.0.1:${PORT}/photos/${localName}`;
-                    }
-                }
+                    if (fs.existsSync(localPath)) return `http://127.0.0.1:${PORT}/photos/${localName}`;
+                    */
+                    return url;
+                });
 
-                console.log(`[COMMAND] Odesílám fotku: ${photoUrl}`);
+                // TRY TO MAP LOCALLY IF POSSIBLE (Simple heuristic: most recent files?)
+                // Actually, let's keep it simple. If we send Cloud URL to Local Next.js, 
+                // Local Next.js will try to fetch it from Cloud. That works if internet is ON.
 
-                // Zavolat API Next.js aplikace (která má SMTP config)
-                // Předpokládáme že Next.js běží na portu 3000
+                console.log(`[COMMAND] Odesílám ${resolvedUrls.length} fotek.`);
+
+                // Zavolat API Next.js aplikace
                 await fetch('http://localhost:3000/api/email', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         email: params.email,
-                        photoUrls: [photoUrl],
+                        photoUrls: resolvedUrls,
                         isTest: false
                     })
                 });

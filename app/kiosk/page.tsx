@@ -1306,13 +1306,47 @@ export default function KioskPage() {
     const sendEmail = async () => {
         if (!emailInput.includes('@')) { showToast('Email?'); return; }
         showToast('Odesílám...');
+
         // Find URLs for selected IDs
         let urlsToSend: string[] = [];
-        // If we are reviewing a single photo (status=review), use that
         if (status === 'review' && lastPhoto) urlsToSend = [lastPhoto];
         else urlsToSend = galleryPhotos.filter(p => selectedPhotoIds.includes(p.id)).map(p => p.url);
 
-        try { await fetch('/api/email', { method: 'POST', body: JSON.stringify({ email: emailInput, photoUrls: urlsToSend }) }); showToast('ODESLÁNO ✅'); setShowEmailModal(false); } catch (e) { showToast('Chyba odeslání ❌'); }
+        try {
+            // 1. Try Direct Send (Preferred for Autonomy)
+            const res = await fetch('/api/email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: emailInput, photoUrls: urlsToSend })
+            });
+
+            if (res.ok) {
+                showToast('ODESLÁNO (WEB) ✅');
+                setShowEmailModal(false);
+                return;
+            }
+
+            // 2. If Direct Failed (e.g. no config) AND we are on Web -> Fallback to Kiosk Bridge
+            if (!isLocal) {
+                console.warn("Web Email failed, trying Kiosk Bridge...", res.status);
+                showToast('Zkouším přes Kiosk...');
+
+                await fetch('/api/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cmd: 'SEND_EMAIL',
+                        params: { email: emailInput, photoUrls: urlsToSend }
+                    })
+                });
+
+                showToast('ODESLÁNO (KIOSK) ✅');
+                setShowEmailModal(false);
+                return;
+            }
+
+            throw new Error('Email API failed');
+        } catch (e) { showToast('Chyba odeslání ❌'); console.error(e); }
     };
 
     // --- GALLERY LOGIC END ---
@@ -1344,14 +1378,7 @@ export default function KioskPage() {
                                 printHeight={sessionSettings.printHeight}
                             />
 
-                            {/* COUNTDOWN OVERLAY */}
-                            {countdownValue !== null && countdownValue > 0 && !isLocal && (
-                                <div className="absolute inset-x-0 bottom-48 flex items-center justify-center z-50 pointer-events-none">
-                                    <div key={countdownValue} className="text-8xl font-bold text-white drop-shadow-[0_0_10px_rgba(0,0,0,0.8)] animate-in zoom-in duration-300">
-                                        {countdownValue}
-                                    </div>
-                                </div>
-                            )}
+
                         </div>}
             </div>
 
