@@ -77,8 +77,10 @@ async function sync() {
 
                 // Find Event ID
                 let eventId = null;
-                const ev = await prisma.event.findUnique({ where: { slug: file.event } });
-                if (ev) eventId = ev.id;
+                if (file.event) {
+                    const ev = await prisma.event.findUnique({ where: { slug: file.event } });
+                    if (ev) eventId = ev.id;
+                }
 
                 const isPrint = file.name.includes('print');
 
