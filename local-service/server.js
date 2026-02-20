@@ -534,6 +534,19 @@ function startCommandPolling() {
                 });
             }
 
+            if (command === 'PRINT' && params) {
+                console.log(`[COMMAND] 🖨️ Požadavek na tisk z webu: ${params.filename}`);
+                try {
+                    await fetch(`http://127.0.0.1:${PORT}/print`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(params)
+                    });
+                } catch (pe) {
+                    console.error('[COMMAND] Chyba lokálního tisku:', pe.message);
+                }
+            }
+
             if ((command === 'CAPTURE' || command === 'TRIGGER') && params) {
                 console.log(`[COMMAND] 📸 Požadavek na focení z webu! (Delay: ${params.delay || 0})`);
                 if (!isCapturing) {

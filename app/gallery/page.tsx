@@ -195,17 +195,25 @@ export default function GalleryPage() {
         if (!selectedPhoto) return;
 
         const filename = selectedPhoto.split('/').pop();
+        const relativePath = selectedPhoto.replace(/^\/photos\//, '').replace(/^\/api\/media\/image\//, '');
+
         showToast('Odesílám na tiskárnu... 🖨️');
 
         try {
-            // Tisk probíhá přes lokální bridge (stejně jako v kiosku)
-            await fetch(`http://${cameraIp}:5555/print`, {
+            // Tisk probíhá přes API (které to předá Kiosku nebo frontě)
+            const res = await fetch('/api/print', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename })
+                body: JSON.stringify({ filename, path: relativePath })
             });
+
+            if (res.ok) {
+                showToast('Odesláno do fronty pro tisk ✅');
+            } else {
+                showToast('Chyba odeslání požadavku ❌');
+            }
         } catch (err) {
-            showToast('Chyba tisku (běží Bridge?) ❌');
+            showToast('Chyba sítě při tisku ❌');
         }
     };
 
