@@ -390,13 +390,17 @@ $img.Dispose(); $newImg.Dispose(); $graph.Dispose();
 
 
 
-app.post('/print', (req, res) => {
+app.post('/print', async (req, res) => {
     let { filename, path: relativePath } = req.body;
 
     let filePath;
     if (relativePath) {
         const safePath = relativePath.replace(/^(\.\.([/\\]|$))+/, '');
         filePath = path.join(BASE_PHOTOS_DIR, safePath);
+        // Fix for /api/media/image fallback paths directly coming as relativePath
+        if (safePath.startsWith('api') || safePath.startsWith('/api')) {
+            filePath = path.join(SAVE_DIR, filename || `print_${Date.now()}.jpg`);
+        }
     } else {
         if (filename && filename.startsWith('web_')) {
             filename = filename.replace('web_', '');
@@ -404,20 +408,51 @@ app.post('/print', (req, res) => {
         filePath = path.join(SAVE_DIR, filename);
     }
 
-    console.log(`[PRINT] Požadavek na tisk: ${path.basename(filePath)} (${filePath})`);
+    console.log(`[PRINT] Požadavek na tisk: ${filename || path.basename(filePath)}`);
 
     if (!fs.existsSync(filePath)) {
-        console.error(`[PRINT] Soubor neexistuje: ${filePath}`);
+        console.warn(`[PRINT] Soubor neexistuje lokálně: ${filePath}`);
+
+        // Zkusit fallback
+        let foundFallback = false;
         if (!relativePath && SAVE_DIR !== BASE_PHOTOS_DIR) {
             const fallbackPath = path.join(BASE_PHOTOS_DIR, filename);
             if (fs.existsSync(fallbackPath)) {
                 console.log(`[PRINT] Nalezeno v fallback umístění: ${fallbackPath}`);
                 filePath = fallbackPath;
-            } else {
-                return res.status(404).json({ success: false, error: 'File not found' });
+                foundFallback = true;
             }
-        } else {
-            return res.status(404).json({ success: false, error: 'File not found' });
+        }
+
+        // Pokud to nenašlo, musíme stáhnout z Cloudu! (Toto je nová oprava pro cloud tiskové fronty)
+        if (!foundFallback) {
+            console.log(`[PRINT] Pokouším se stáhnout fotku pro tisk z Cloudu...`);
+
+            const downloadUrl = (relativePath && relativePath.includes('/api/media/image/'))
+                ? `https://cvak.up.railway.app${relativePath.startsWith('/') ? '' : '/'}${relativePath}`
+                : `https://cvak.up.railway.app/photos/${relativePath || filename}`;
+
+            const https = require('https');
+
+            try {
+                await new Promise((resolve, reject) => {
+                    https.get(downloadUrl, (dRes) => {
+                        if (dRes.statusCode === 200) {
+                            // Pro jistotu vytvoříme složky k souboru
+                            fs.mkdirSync(path.dirname(filePath), { recursive: true });
+                            const wStream = fs.createWriteStream(filePath);
+                            dRes.pipe(wStream);
+                            wStream.on('finish', () => { wStream.close(); resolve(); });
+                        } else {
+                            reject(new Error(`Failed with status: ${dRes.statusCode}`));
+                        }
+                    }).on('error', reject);
+                });
+                console.log(`[PRINT] ✅ Úspěšně staženo z cloudu pro tisk!`);
+            } catch (err) {
+                console.error(`[PRINT] ❌ Chyba stažení z cloudu: ${err.message}`);
+                return res.status(404).json({ success: false, error: 'File not found locally nor downloadable from cloud' });
+            }
         }
     }
 
@@ -431,7 +466,7 @@ app.post('/print', (req, res) => {
             console.log('[PRINT] Odesláno do fronty.', stdout);
         }
     });
-    res.json({ success: true, message: 'Odesláno na tisk' });
+    res.json({ success: true, message: 'Odesláno na tisk', downloaded: true });
 });
 
 app.listen(PORT, () => {

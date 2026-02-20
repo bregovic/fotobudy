@@ -73,15 +73,16 @@ export async function POST(req: NextRequest) {
         let finalUrl = publicUrl;
         let finalId = webFilename;
 
-        // 2. SYNCHRONIZE TO CLOUD DB (If available)
-        if (HAS_DB) {
+        // 2. SYNCHRONIZE TO CLOUD DB (If available AND we are running on Cloud)
+        // Local PC should NOT write directly to DB here, because 'cloud-sync.js' will upload it properly later.
+        if (HAS_DB && IS_CLOUD) {
             try {
                 const media = await prisma.media.create({
                     data: {
-                        url: `/api/media/image/${Date.now()}`, // Placeholder, updated next step
+                        url: `/api/media/image/${Date.now()}`,
                         type: type as string,
                         localPath: originalLocalPath,
-                        data: processedBuffer, // Store binary in DB
+                        data: processedBuffer,
                         eventId: activeEvent?.id
                     }
                 });
@@ -93,12 +94,10 @@ export async function POST(req: NextRequest) {
                 });
 
                 console.log(`[UPLOAD] Cloud DB Synced: ${media.id}`);
-                finalUrl = dbUrl; // Use DB URL for consistency if we wanted, but local kiosk prefers local file?
-                // Actually, local kiosk can use local file for speed, but returns DB ID for reference.
+                finalUrl = dbUrl;
                 finalId = media.id;
             } catch (e) {
-                console.error("Cloud Sync Failed (Offline?)", e);
-                // Continue with local only
+                console.error("Cloud Sync Failed", e);
             }
         }
 
