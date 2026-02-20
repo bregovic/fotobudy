@@ -1239,20 +1239,34 @@ export default function KioskPage() {
     };
     // Unified Countdown: Trigger server with delay
     const startCountdown = () => {
-        if (processingRef.current) return;
+        if (processingRef.current || status !== 'idle') return;
+        setStatus('countdown'); // immediately lock the UI from double clicks
         takePhoto(timerSeconds * 1000);
     };
 
-    const takePhoto = async (delay = 0) => {
-        // We do NOT set status here. We rely on polling /status from Bridge.
-        // This prevents conflicting states (local vs server).
+    // Auto-Rescue Escape Hatch
+    useEffect(() => {
+        let timeout: NodeJS.Timeout;
+        if (status === 'capturing' || status === 'countdown') {
+            timeout = setTimeout(() => {
+                // If it takes more than 15s total to take and process a photo, the camera failed
+                if (status === 'capturing' || status === 'countdown') {
+                    console.log("Escape Hatch Triggered: Resetting UI to idle");
+                    showToast('Chyba: Zrcadlovka neodpověděla včas. Restartuji senzor.');
+                    restartLiveView();
+                }
+            }, 15000 + (timerSeconds * 1000));
+        }
+        return () => clearTimeout(timeout);
+    }, [status, timerSeconds]);
 
+    const takePhoto = async (delay = 0) => {
         try {
             if (!isLocal) {
                 // [WEB MODE] Send trigger command to server DB
                 console.log(`📸 WEB TRIGGER: Sending CAPTURE command to server (Delay: ${delay}ms)`);
 
-                // 1. Simulate Visual Countdown (Web Poll cannot reach Local Bridge)
+                // 1. Simulate Visual Countdown
                 if (delay > 0) {
                     setStatus('countdown');
                     setCountdownValue(Math.ceil(delay / 1000));

@@ -208,12 +208,17 @@ function triggerShoot(delay) {
     setTimeout(() => {
         countdownTarget = 0;
         isCapturing = false; // Reset lock
-        const captureUrl = getDccApiUrl();
-        http.get(captureUrl, (dccRes) => {
-            dccRes.resume();
-        }).on('error', (e) => {
-            console.error(`[SHOOT] Chyba komunikace s DCC: ${e.message}`);
+
+        // Broadcast Capture na všechny možné přístavy pro maximální šanci (DCC spadne na neaktivní, ale vyfotí z aktivního)
+        CANDIDATE_PORTS.forEach(port => {
+            const captureUrl = `http://127.0.0.1:${port}/?CMD=Capture`;
+            const req = http.get(captureUrl, (dccRes) => {
+                dccRes.resume();
+            });
+            req.on('error', (e) => { });
+            req.setTimeout(2500, () => req.destroy());
         });
+        console.log(`[SHOOT] Úplný broadcast focení na porty: ${CANDIDATE_PORTS.join(', ')}`);
     }, delay);
 }
 
