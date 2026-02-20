@@ -1314,7 +1314,6 @@ export default function KioskPage() {
             setFailedPorts([]);
 
             // 3. Reset scanning logic ONLY if we don't have an active port
-            // 3. Reset scanning logic ONLY if we don't have an active port
             if (!activePort) {
                 setIsScanning(true);
             } else {
@@ -1322,6 +1321,7 @@ export default function KioskPage() {
                 setStreamToken(Date.now());
             }
             setStreamStatus('live');
+            setStatus('idle'); // Ensure UI returns to IDLE if stuck
 
         } catch (e) {
             // Silent fail
@@ -1836,11 +1836,18 @@ export default function KioskPage() {
             )}
 
             {/* DOCK */}
-            <div className="absolute top-6 left-6 z-50"><Link href="/" className="p-4 bg-white/10 text-white rounded-full backdrop-blur-md hover:bg-white/20 hover:scale-105 transition-all shadow-lg"><Home size={28} /></Link></div>
+            <div className="absolute top-6 left-6 z-50"><Link href="/" className="p-4 bg-white/10 text-white rounded-full backdrop-blur-md hover:bg-white/20 hover:scale-105 transition-all shadow-lg block"><Home size={28} /></Link></div>
 
-
-
-            {/* MAIN CONTROLS */}
+            {/* QUICK RESTART BUTTON */}
+            <div className="absolute top-6 right-6 z-50">
+                <button
+                    onClick={() => { setStreamToken(Date.now()); restartLiveView(); }}
+                    className="p-4 bg-white/10 text-white/40 rounded-full backdrop-blur-md hover:bg-white/20 hover:text-white hover:scale-105 transition-all shadow-lg flex items-center justify-center group"
+                    title="Restartovat obraz kamery"
+                >
+                    <RefreshCw size={24} className="group-active:animate-spin" />
+                </button>
+            </div>            {/* MAIN CONTROLS */}
             <div className="absolute bottom-6 md:bottom-12 z-30 w-full flex justify-center p-2 md:p-4">
                 <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-full p-2 md:p-4 flex items-center shadow-2xl scale-90 md:scale-125 origin-bottom max-w-full">
                     <div className="flex gap-2 md:gap-6 px-2 md:px-4 border-r border-white/10 pr-2 md:pr-6">
@@ -1849,7 +1856,7 @@ export default function KioskPage() {
                     </div>
                     <div className="mx-2 md:mx-8 relative">
                         {status === 'review' ? (
-                            <button className="w-16 h-16 md:w-24 md:h-24 rounded-full border-4 border-red-500 flex items-center justify-center bg-red-500/20 hover:scale-105 transition-all shadow-red-900/50 shadow-lg" onClick={() => { setStatus('idle'); setLastPhoto(null); setTimeout(restartLiveView, 100); }}><RefreshCw size={30} className="md:w-10 md:h-10" color="#fff" /></button>
+                            <button className="w-16 h-16 md:w-24 md:h-24 rounded-full border-4 border-red-500 flex items-center justify-center bg-red-500/20 hover:scale-105 transition-all shadow-red-900/50 shadow-lg" onClick={() => { setStatus('idle'); setLastPhoto(null); setStreamToken(Date.now()); setTimeout(restartLiveView, 100); }}><RefreshCw size={30} className="md:w-10 md:h-10" color="#fff" /></button>
                         ) : (
                             <button className="w-20 h-20 md:w-28 md:h-28 rounded-full border-[6px] border-white flex items-center justify-center bg-white/10 hover:bg-white/30 transition-all active:scale-95 shadow-lg shadow-white/10" onClick={startCountdown} disabled={status !== 'idle'}><div className="w-14 h-14 md:w-20 md:h-20 bg-white rounded-full shadow-inner"></div></button>
                         )}

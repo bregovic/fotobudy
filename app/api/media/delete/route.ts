@@ -51,10 +51,10 @@ export async function POST(request: Request) {
 
         // --- 🏠 LOCAL DELETE (OFFLINE) ---
         const photosRoot = path.join(process.cwd(), 'public', 'photos');
-        const syncMapPath = path.join(process.cwd(), 'sync_map.json');
+        const syncMapPath = path.join(process.cwd(), '.sync_map.json');
         let syncMap: any = null;
 
-        // Načíst sync_map.json, aby se dal smazat záznam z lokální DB
+        // Načíst .sync_map.json, aby se dal smazat záznam z lokální DB
         if (fs.existsSync(syncMapPath)) {
             try {
                 syncMap = JSON.parse(fs.readFileSync(syncMapPath, 'utf8'));

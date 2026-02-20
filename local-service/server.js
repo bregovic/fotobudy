@@ -40,14 +40,14 @@ let lastFrameTime = 0;
 let isReviewing = false;
 
 function sendLiveViewShow() {
-    // Send LiveView_Show only to the currently active DCC port to avoid flooding and freezing DCC
-    http.get(`http://127.0.0.1:${dccPort}/?cmd=LiveView_Show`, (res) => {
-        res.resume();
-    }).on('error', () => { });
-    console.log(`[STARTUP] Odesílám príkaz LiveView_Show do DCC na port ${dccPort}...`);
+    // Pro jistotu rozešleme Wake-Up na všechny porty - ruční oživování nesmí minout cíl
+    CANDIDATE_PORTS.forEach(port => {
+        http.get(`http://127.0.0.1:${port}/?cmd=LiveView_Show`, (res) => {
+            res.resume();
+        }).on('error', () => { });
+    });
+    console.log(`[WAKE] Broadcast LiveView_Show na porty: ${CANDIDATE_PORTS.join(', ')}`);
 }
-
-const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 1 });
 
 function startCameraPolling() {
     console.log(`[POLLER] Starting smart camera polling (trying ${CANDIDATE_PORTS.join(', ')})...`);
@@ -58,9 +58,9 @@ function startCameraPolling() {
     const poll = () => {
         if (isReviewing) { setTimeout(poll, 200); return; }
 
-        // Fetch from DCC Raw (most reliable) - WITH TIMEOUT & KEEP-ALIVE
+        // Fetch from DCC Raw (most reliable) - Clean connection per frame avoids pool exhaustion
         const liveViewUrl = `http://${DCC_HOST}:${dccPort}/liveview.jpg`;
-        const req = http.get(liveViewUrl, { agent: httpAgent }, (res) => {
+        const req = http.get(liveViewUrl, { agent: false, timeout: 4000 }, (res) => {
             if (res.statusCode !== 200) {
                 res.resume(); // consume body to free memory
                 setTimeout(poll, 1000); // Retry slow if error
@@ -80,14 +80,19 @@ function startCameraPolling() {
         });
 
         req.on('error', (e) => {
-            const currentIdx = CANDIDATE_PORTS.indexOf(dccPort);
-            const nextIdx = (currentIdx + 1) % CANDIDATE_PORTS.length;
-            dccPort = CANDIDATE_PORTS[nextIdx];
+            if (e.code === 'ECONNREFUSED') {
+                const currentIdx = CANDIDATE_PORTS.indexOf(dccPort);
+                const nextIdx = (currentIdx + 1) % CANDIDATE_PORTS.length;
+                dccPort = CANDIDATE_PORTS[nextIdx];
+            } else {
+                console.warn(`[POLLER] Spojeni na portu ${dccPort} preruseno (kamera foti?): ${e.message}`);
+            }
+            // Wait a bit before retrying
             setTimeout(poll, 500);
         });
 
-        // CRITICAL FIX: Timeout hangs
-        req.setTimeout(1500, () => {
+        // CRITICAL FIX: DSLR frames can be huge + slow USB, allow 4 seconds before killing
+        req.setTimeout(4000, () => {
             req.destroy();
         });
     };
@@ -110,9 +115,9 @@ app.get('/stream.mjpg', (req, res) => {
         if (!active || !latestFrame) return;
         try {
             if (!res.writable) { active = false; clearInterval(streamInterval); return; }
-            res.write(`--myboundary\nContent-Type: image/jpeg\nContent-Length: ${latestFrame.length}\n\n`);
+            res.write(`--myboundary\r\nContent-Type: image/jpeg\r\nContent-Length: ${latestFrame.length}\r\n\r\n`);
             res.write(latestFrame);
-            res.write('\n');
+            res.write('\r\n');
         } catch (e) {
             // Broken pipe or closed socket — clean up
             active = false;
@@ -181,6 +186,7 @@ app.get('/cloud-stream-status', (req, res) => {
 
 // --- WAKE UP LIVE VIEW (Called from Frontend when closing review) ---
 app.get('/wake', (req, res) => {
+    isReviewing = false;
     sendLiveViewShow();
     res.json({ success: true });
 });

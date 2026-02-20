@@ -16,7 +16,7 @@ const os = require('os');
 
 // --- KONFIGURACE ---
 const PHOTOS_DIR = path.join(__dirname, '..', 'public', 'photos');
-const SYNC_MAP_FILE = path.join(__dirname, '..', 'sync_map.json');
+const SYNC_MAP_FILE = path.join(__dirname, '..', '.sync_map.json');
 const CLOUD_API_URL = 'https://cvak.up.railway.app/api/media/upload';
 const TARGET_SIZE_KB = 500; // Cílová velikost ~0.5MB
 
