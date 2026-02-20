@@ -54,6 +54,8 @@ export async function GET(request: Request) {
                         if ((lower.endsWith('.jpg') || lower.endsWith('.jpeg')) && !lower.startsWith('.')) {
                             // Ignorujeme print verze a thumbnails, pokud existuji
                             if (lower.startsWith('print_')) continue;
+                            if (lower.startsWith('web_')) continue;
+                            if (lower.startsWith('edited_')) continue;
 
                             const stats = fs.statSync(fullPath);
                             // Hledame NEJNOVEJSI soubor

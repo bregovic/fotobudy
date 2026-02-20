@@ -800,6 +800,36 @@ export default function KioskPage() {
     const [techAuth, setTechAuth] = useState(false);
     const [techPasswordInput, setTechPasswordInput] = useState('');
 
+    // --- OVERLAY LOGIC ---
+    const [overlayConfig, setOverlayConfig] = useState<{ path: string, url?: string, x: number, y: number, w: number } | null>(null);
+
+    useEffect(() => {
+        if (showSettings) {
+            fetch('/api/event/config').then(r => r.json()).then(d => {
+                if (d.overlay) {
+                    // Try to find URL if we only have path (from assets)
+                    // But assets might not be loaded yet or format differs.
+                    // Ideally we save URL too or match by ID.
+                    // For now, let's trust we can match it or use it.
+                    setOverlayConfig(d.overlay);
+                } else {
+                    setOverlayConfig(null);
+                }
+            });
+        }
+    }, [showSettings]);
+
+    const handleOverlaySave = async () => {
+        try {
+            await fetch('/api/event/update-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ overlay: overlayConfig })
+            });
+            showToast('Samolepka aktivní ✅');
+        } catch { showToast('Chyba uložení'); }
+    };
+
     // Environment Check
     const [isLocal, setIsLocal] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -918,7 +948,7 @@ export default function KioskPage() {
             setIsScanning(true);
 
             // Prioritize Bridge (5555), then others
-            const candidates = [5555, 5514, 5521, 5520, 5513].filter(p => !failedPorts.includes(p));
+            const candidates = [5555, 5600, 5599, 5514, 5521, 5520, 5513].filter(p => !failedPorts.includes(p));
 
             if (candidates.length === 0 || failedPorts.length > 0) {
                 try {
@@ -942,7 +972,7 @@ export default function KioskPage() {
 
                     let path = '/liveview.jpg';
                     if (port === 5555) path = '/stream.mjpg';
-                    else if (port === 5521 || port === 5514) path = '/live';
+                    else if (port === 5521 || port === 5514 || port === 5599 || port === 5600) path = '/live';
 
                     // For MJPEG streams (5555), fetching body can hang. 
                     // But for initial check we just need response headers or connection success.
@@ -968,12 +998,14 @@ export default function KioskPage() {
         if (!isClient) return ''; // SSR safe
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         if (isLocal && activePort) {
-            let path = '/liveview.jpg';
-            if (activePort === 5555) path = '/stream.mjpg';
-            else if (activePort === 5521 || activePort === 5514) path = '/live';
+            if (activePort === 5555) {
+                // Bridge: MJPEG stream with token — token change forces browser to reconnect
+                // This is critical for onStreamError recovery to work!
+                return `http://${DEFAULT_IP}:5555/stream.mjpg?r=${streamToken}`;
+            }
 
-            // Append token to force browser to re-connect to stream
-            return `http://${cameraIp}:${activePort}${path}?t=${streamToken}`;
+            // Direct Camera Connection (snapshot with token)
+            return `http://${cameraIp}:${activePort}/liveview.jpg?t=${streamToken}`;
         }
         return `/api/stream/snapshot?t=${Date.now()}`;
     };
@@ -983,6 +1015,19 @@ export default function KioskPage() {
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         if (!isLocal) { const i = setInterval(() => setCloudTick(Date.now()), 200); return () => clearInterval(i); }
     }, [isClient]);
+
+    // Proactive MJPEG stream reconnect every 25s
+    // Chrome may silently drop MJPEG connections — this forces a fresh connection before that happens.
+    useEffect(() => {
+        if (!isClient) return;
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        if (!isLocal || !activePort) return;
+        const i = setInterval(() => {
+            setStreamToken(Date.now());
+        }, 25000);
+        return () => clearInterval(i);
+    }, [isClient, activePort]);
+
 
     // Auto-restart LiveView when returning to idle
     useEffect(() => {
@@ -1054,7 +1099,6 @@ export default function KioskPage() {
     useEffect(() => {
         if (typeof window !== 'undefined') {
             const savedIp = localStorage.getItem('camera_ip'); if (savedIp) setCameraIp(savedIp);
-            fetch('/api/assets').then(res => res.json()).then(data => { if (Array.isArray(data)) setAssets(data); });
         }
         fetch('/api/session', { method: 'POST', body: JSON.stringify({ id: SESSION_ID }) }).catch(console.error);
         const interval = setInterval(async () => {
@@ -1147,11 +1191,10 @@ export default function KioskPage() {
         setLastPhoto(originalUrl);
         setStatus('review');
 
-        // Auto-return faster
         setTimeout(() => {
             setLastPhoto(null);
             setStatus('idle');
-        }, 2000); // Only 2 seconds delay
+        }, 2000);
     };
 
     const handleEditorSave = async (blob: Blob) => {
@@ -1252,11 +1295,14 @@ export default function KioskPage() {
             setFailedPorts([]);
 
             // 3. Reset scanning logic ONLY if we don't have an active port
+            // 3. Reset scanning logic ONLY if we don't have an active port
             if (!activePort) {
                 setIsScanning(true);
+            } else {
+                // If we have an active port, just refresh token without blocking UI
+                setStreamToken(Date.now());
             }
             setStreamStatus('live');
-            setStreamToken(Date.now()); // Force reload of image tag
 
         } catch (e) {
             // Silent fail
@@ -1368,7 +1414,7 @@ export default function KioskPage() {
                             <LiveView
                                 streamUrl={finalStreamUrl}
                                 isBW={sessionSettings.isBW}
-                                isScanning={isScanning}
+                                isScanning={isScanning && !activePort} // Only show loader if we have NO active port
                                 error={isClient && isLocal && !isScanning && !activePort}
                                 className="w-full h-full object-contain"
                                 onRestart={restartLiveView}
@@ -1476,6 +1522,82 @@ export default function KioskPage() {
                                                 />
                                                 <button onClick={createEvent} className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-xl font-bold shadow-lg transition-all active:scale-95 whitespace-nowrap">
                                                     Vytvořit
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* BRANDING OVERLAY EDITOR */}
+                                    <div className="p-6 bg-slate-950 border border-indigo-500/30 rounded-2xl shadow-lg space-y-6">
+                                        <h3 className="text-xl font-bold text-pink-400 flex items-center gap-2"><Palette /> Značka Akce (Samolepka)</h3>
+                                        <div className="flex flex-col xl:flex-row gap-8 items-start">
+
+                                            {/* Preview */}
+                                            <div className="relative w-full max-w-[400px] aspect-[3/2] bg-slate-800 rounded-lg overflow-hidden border border-slate-700 shadow-xl mx-auto xl:mx-0 order-first xl:order-last">
+                                                <div className="absolute inset-0 flex items-center justify-center text-slate-700 font-black text-5xl select-none">FOTO</div>
+                                                {/* Grid Lines */}
+                                                <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-20"><div className="border-r border-b border-white"></div><div className="border-r border-b border-white"></div><div className="border-b border-white"></div><div className="border-r border-b border-white"></div><div className="border-r border-b border-white"></div><div className="border-b border-white"></div></div>
+
+                                                {overlayConfig && (
+                                                    <img
+                                                        src={overlayConfig.url || `/assets/stickers/${overlayConfig.path.split(/[/\\]/).pop()}`}
+                                                        className="absolute select-none pointer-events-none"
+                                                        style={{
+                                                            left: `${overlayConfig.x * 100}%`,
+                                                            top: `${overlayConfig.y * 100}%`,
+                                                            width: `${overlayConfig.w * 100}%`,
+                                                            transform: 'translate(0, 0)', // Top-Left origin
+                                                        }}
+                                                    />
+                                                )}
+                                            </div>
+
+                                            {/* Controls */}
+                                            <div className="flex-1 w-full space-y-4">
+                                                <div className="space-y-2">
+                                                    <label className="text-xs font-bold text-slate-400 uppercase">Vybrat grafiku</label>
+                                                    <select
+                                                        className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none active:border-pink-500"
+                                                        value={overlayConfig ? overlayConfig.path.split(/[/\\]/).pop() : ''}
+                                                        onChange={(e) => {
+                                                            const id = e.target.value;
+                                                            if (!id) { setOverlayConfig(null); return; }
+                                                            const s = assets.find(a => a.id === id);
+                                                            if (s) {
+                                                                setOverlayConfig({
+                                                                    path: `public/assets/stickers/${s.id}`, // Path for server (Node.js)
+                                                                    url: s.url, // URL for preview
+                                                                    x: 0.8, y: 0.8, w: 0.15 // Default to bottom-right corner
+                                                                });
+                                                            }
+                                                        }}
+                                                    >
+                                                        <option value="">-- Žádná (Vypnuto) --</option>
+                                                        {assets.filter(a => a.type === 'STICKER').map(s => (
+                                                            <option key={s.id} value={s.id}>{s.id}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+
+                                                {overlayConfig && (
+                                                    <div className="space-y-4 p-4 bg-slate-900 rounded-xl border border-slate-800">
+                                                        <div className="space-y-1">
+                                                            <div className="flex justify-between text-xs text-slate-400"><span>Horizontálně (X)</span><span>{(overlayConfig.x * 100).toFixed(0)}%</span></div>
+                                                            <input type="range" min="0" max="1" step="0.01" value={overlayConfig.x} onChange={e => setOverlayConfig({ ...overlayConfig, x: parseFloat(e.target.value) })} className="w-full accent-pink-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <div className="flex justify-between text-xs text-slate-400"><span>Vertikálně (Y)</span><span>{(overlayConfig.y * 100).toFixed(0)}%</span></div>
+                                                            <input type="range" min="0" max="1" step="0.01" value={overlayConfig.y} onChange={e => setOverlayConfig({ ...overlayConfig, y: parseFloat(e.target.value) })} className="w-full accent-pink-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <div className="flex justify-between text-xs text-slate-400"><span>Velikost (Šířka)</span><span>{(overlayConfig.w * 100).toFixed(0)}%</span></div>
+                                                            <input type="range" min="0.05" max="1" step="0.01" value={overlayConfig.w} onChange={e => setOverlayConfig({ ...overlayConfig, w: parseFloat(e.target.value) })} className="w-full accent-pink-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <button onClick={handleOverlaySave} className="w-full bg-pink-600 hover:bg-pink-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-pink-900/20 active:scale-95 transition-all">
+                                                    💾 Uložit nastavení značky
                                                 </button>
                                             </div>
                                         </div>

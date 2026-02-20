@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { prisma } from '../../../../lib/prisma'; // Import prisma for Cloud deletion
+
+const IS_CLOUD = !!process.env.RAILWAY_ENVIRONMENT_NAME;
 
 export async function POST(request: Request) {
     try {
@@ -25,6 +28,28 @@ export async function POST(request: Request) {
 
         console.log(`[DELETE] Mažu ${idsToDelete.length} položek...`);
 
+        // --- ☁️ CLOUD DELETE (RAILWAY) ---
+        if (IS_CLOUD) {
+            const dbIds: string[] = [];
+            for (const idOrUrl of idsToDelete) {
+                // If it looks like a Cloud URL (/api/media/image/UUID)
+                if (idOrUrl.includes('/api/media/image/')) {
+                    dbIds.push(idOrUrl.split('/').pop() || idOrUrl);
+                } else {
+                    // It's probably just an ID or filename already, but in cloud we use DB IDs
+                    dbIds.push(idOrUrl);
+                }
+            }
+
+            console.log(`[CLOUD DELETE] Mazání DB ID: `, dbIds);
+            const result = await prisma.media.deleteMany({
+                where: { id: { in: dbIds } }
+            });
+            console.log(`[CLOUD DELETE] Smazáno ${result.count} záznamů v DB.`);
+            return NextResponse.json({ success: true, count: result.count });
+        }
+
+        // --- 🏠 LOCAL DELETE (OFFLINE) ---
         const photosRoot = path.join(process.cwd(), 'public', 'photos');
         let deletedCount = 0;
 
@@ -34,17 +59,40 @@ export async function POST(request: Request) {
 
             console.log(`   -> Mazání souboru: ${filePath}`); // Debug log
 
-            if (fs.existsSync(filePath)) {
-                try {
-                    fs.unlinkSync(filePath);
-                    console.log(`   -> Smazáno: ${relativeId}`);
-                    deletedCount++;
-                } catch (e) {
-                    console.error(`   -> Chyba mazání ${relativeId}:`, e);
+            // Pomocná funkce pro smazání jednoho souboru
+            const tryDelete = (p: string) => {
+                if (fs.existsSync(p)) {
+                    try {
+                        fs.unlinkSync(p);
+                        console.log(`      Smazáno: ${path.basename(p)}`);
+                    } catch (e) {
+                        console.error(`      Chyba mazání ${path.basename(p)}:`, e);
+                    }
                 }
+            };
+
+            // 1. Smazat originál
+            if (fs.existsSync(filePath)) {
+                tryDelete(filePath);
+                deletedCount++;
             } else {
                 console.warn(`   -> Soubor neexistuje: ${filePath}`);
             }
+
+            // 2. Smazat cloud (komprimovanou) verzi, pokud existuje
+            // Parse paths to construct /cloud/ version
+            const dir = path.dirname(relativeId);
+            const base = path.basename(relativeId);
+            const cloudPath = path.join(photosRoot, dir, 'cloud', base);
+            tryDelete(cloudPath);
+
+            // 3. Smazat starší "web_" verzi (pro zpětnou kompatibilitu s dřívějším chováním)
+            const webPath = path.join(photosRoot, dir, 'web_' + base);
+            tryDelete(webPath);
+
+            // 4. Smazat "edited_" verzi (upravenou z Kiosku)
+            const editedPath = path.join(photosRoot, dir, 'edited_' + base);
+            tryDelete(editedPath);
         }
 
         return NextResponse.json({ success: true, count: deletedCount });
