@@ -34,36 +34,73 @@ export default function GalleryPage() {
     const [passwordInput, setPasswordInput] = useState('');
     const [pendingEventId, setPendingEventId] = useState<string | null>(null);
 
-    // Načtení fotek a konfigurace
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+
+    // --- NAČÍTÁNÍ FOTEK (A STRÁNKOVÁNÍ) ---
     useEffect(() => {
         const fetchPhotos = () => {
-            const url = selectedEventId
-                ? `/api/media/list?eventId=${selectedEventId}`
-                : `/api/media/list`;
+            const baseUrl = selectedEventId ? `/api/media/list?eventId=${selectedEventId}` : '/api/media/list';
+            const url = baseUrl + (baseUrl.includes('?') ? '&' : '?') + `page=${page}`;
 
             fetch(url)
                 .then(res => res.json())
                 .then(data => {
-                    if (Array.isArray(data)) setPhotos(data);
+                    if (Array.isArray(data)) {
+                        setHasMore(data.length === 60);
+                        if (page === 1) {
+                            setPhotos(data);
+                        } else {
+                            setPhotos(prev => {
+                                const newUrls = new Set(data.map(d => d.url));
+                                const filteredPrev = prev.filter(p => !newUrls.has(p.url));
+                                return [...filteredPrev, ...data];
+                            });
+                        }
+                    }
                 })
                 .catch(console.error);
         };
+        fetchPhotos();
+    }, [selectedEventId, page]);
+
+    // --- NAČÍTÁNÍ KONFIGURACE A SLEDOVÁNÍ (POLLING) ---
+    useEffect(() => {
+        // Reset stránkování při změně události
+        setPage(1);
 
         const fetchEvents = () => {
             fetch('/api/event')
                 .then(res => res.json())
+                .then(data => { if (Array.isArray(data)) setEvents(data); })
+                .catch(console.error);
+        };
+        fetchEvents();
+
+        // Polling pro automatickou aktualizaci - hlídá pouze 1. stranu (nové fotky)
+        const pollNewPhotos = () => {
+            const baseUrl = selectedEventId ? `/api/media/list?eventId=${selectedEventId}` : '/api/media/list';
+            const url = baseUrl + (baseUrl.includes('?') ? '&' : '?') + `page=1`;
+            fetch(url)
+                .then(res => res.json())
                 .then(data => {
-                    if (Array.isArray(data)) setEvents(data);
+                    if (Array.isArray(data)) {
+                        setPhotos(prev => {
+                            if (prev.length === 0) return data;
+                            // Najdi nové fotky (ty co nemáme v `prev`) a ty navíc prependni (přidej na začátek)
+                            const prevUrls = new Set(prev.map(p => p.url));
+                            const newPhotos = data.filter(d => !prevUrls.has(d.url));
+                            if (newPhotos.length > 0) {
+                                return [...newPhotos, ...prev];
+                            }
+                            return prev;
+                        });
+                    }
                 })
                 .catch(console.error);
         };
 
-        // První načtení
-        fetchPhotos();
-        fetchEvents();
-
-        // Polling pro automatickou aktualizaci (kdyby se mazalo odjinud)
-        const interval = setInterval(fetchPhotos, 5000);
+        const interval = setInterval(pollNewPhotos, 5000);
 
         // Konfigurace z LocalStorage (sdílená s Kioskem/Profilem)
         if (typeof window !== 'undefined') {
@@ -333,6 +370,18 @@ export default function GalleryPage() {
             {photos.length === 0 && (
                 <div className="text-center text-slate-500 mt-20">
                     <p>Zatím žádné fotky...</p>
+                </div>
+            )}
+
+            {/* Pagination / Load More */}
+            {hasMore && photos.length > 0 && (
+                <div className="flex justify-center mt-12 mb-20">
+                    <button
+                        onClick={() => setPage(p => p + 1)}
+                        className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full font-bold shadow-lg transition-transform hover:scale-105 active:scale-95"
+                    >
+                        Načíst další fotky
+                    </button>
                 </div>
             )}
 

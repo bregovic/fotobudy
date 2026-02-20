@@ -460,7 +460,7 @@ const LiveView = memo(({ streamUrl, isBW, isScanning, error, className, onRestar
 LiveView.displayName = 'LiveView';
 
 // --- MODIFIED GALLERY GRID ---
-const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail, onClose, events, selectedEventId, onEventChange, onEdit }: any) => {
+const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail, onClose, events, selectedEventId, onEventChange, onEdit, hasMore, onLoadMore }: any) => {
     const [viewPhotoIndex, setViewPhotoIndex] = useState<number | null>(null);
 
     // Nav Logic
@@ -570,6 +570,18 @@ const GalleryGrid = ({ photos, selectedIds, onToggle, onDelete, onPrint, onEmail
                         </button>
                     </div>
                 ))}
+
+                {/* Pagination / Load More Button */}
+                {hasMore && photos.length > 0 && (
+                    <div className="col-span-full flex justify-center mt-8 mb-20">
+                        <button
+                            onClick={onLoadMore}
+                            className="px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full font-bold shadow-lg transition-transform hover:scale-105 active:scale-95 text-xl"
+                        >
+                            Načíst další fotky
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -608,6 +620,8 @@ export default function KioskPage() {
     const [isUploading, setIsUploading] = useState(false);
     const [showGallery, setShowGallery] = useState(false);
     const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]);
+    const [galleryPage, setGalleryPage] = useState(1);
+    const [galleryHasMore, setGalleryHasMore] = useState(true);
     const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
     const [galleryEventId, setGalleryEventId] = useState<string>('');
     const [showEmailModal, setShowEmailModal] = useState(false);
@@ -1310,23 +1324,44 @@ export default function KioskPage() {
     };
 
     // --- GALLERY LOGIC START ---
-    const fetchGalleryPhotos = async (eventId: string = '') => {
+    const fetchGalleryPhotos = async (eventId: string = '', pageNum: number = 1, append: boolean = false) => {
         try {
-            const url = eventId ? `/api/media/list?eventId=${eventId}` : '/api/media/list';
+            const baseUrl = eventId ? `/api/media/list?eventId=${eventId}` : '/api/media/list';
+            const url = baseUrl + (baseUrl.includes('?') ? '&' : '?') + `page=${pageNum}`;
             const res = await fetch(url);
             const data = await res.json();
-            if (Array.isArray(data)) setGalleryPhotos(data);
+            if (Array.isArray(data)) {
+                setGalleryHasMore(data.length === 60);
+                if (append) {
+                    setGalleryPhotos(prev => {
+                        const newUrls = new Set(data.map(d => d.url));
+                        const filteredPrev = prev.filter(p => !newUrls.has(p.url));
+                        return [...filteredPrev, ...data];
+                    });
+                } else {
+                    setGalleryPhotos(data);
+                }
+            }
         } catch (e) { }
     };
 
     const openGallery = async () => {
-        setShowGallery(true); setSelectedPhotoIds([]);
-        fetchGalleryPhotos(galleryEventId);
+        setShowGallery(true); setSelectedPhotoIds([]); setGalleryPage(1);
+        fetchGalleryPhotos(galleryEventId, 1, false);
     };
 
     useEffect(() => {
-        if (showGallery) fetchGalleryPhotos(galleryEventId);
+        if (showGallery) {
+            setGalleryPage(1);
+            fetchGalleryPhotos(galleryEventId, 1, false);
+        }
     }, [galleryEventId]);
+
+    useEffect(() => {
+        if (showGallery && galleryPage > 1) {
+            fetchGalleryPhotos(galleryEventId, galleryPage, true);
+        }
+    }, [galleryPage]);
     const toggleSelection = (id: string) => {
         setSelectedPhotoIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
     };
@@ -1890,6 +1925,8 @@ export default function KioskPage() {
                     selectedEventId={galleryEventId}
                     onEventChange={(id: string) => setGalleryEventId(id)}
                     onEdit={(id: string) => setEditingPhotoId(id)}
+                    hasMore={galleryHasMore}
+                    onLoadMore={() => setGalleryPage(p => p + 1)}
                 />
             )}
 

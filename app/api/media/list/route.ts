@@ -9,11 +9,17 @@ const IS_CLOUD = !!process.env.RAILWAY_ENVIRONMENT_NAME;
 
 export async function GET(req: NextRequest) {
     try {
+        const page = parseInt(req.nextUrl.searchParams.get('page') || '1', 10);
+        const limitStr = req.nextUrl.searchParams.get('limit');
+        const limit = limitStr ? parseInt(limitStr, 10) : 60;
+        const skip = (page - 1) * limit;
+
         // --- ☁️ CLOUD MODE (RAILWAY) ---
         if (IS_CLOUD) {
             const medias = await prisma.media.findMany({
                 orderBy: { createdAt: 'desc' },
-                take: 60,
+                skip: skip,
+                take: limit,
                 where: { type: 'PHOTO' }
             });
 
@@ -28,7 +34,6 @@ export async function GET(req: NextRequest) {
         // [SAFE LIST API] - No Prisma, No Crash.
         const baseDir = path.join(process.cwd(), 'public', 'photos');
         const allPhotos: any[] = [];
-        const limit = 60; // Max number of photos to return
 
         if (!fs.existsSync(baseDir)) {
             return NextResponse.json([]);
@@ -107,8 +112,8 @@ export async function GET(req: NextRequest) {
         // Sort by newest first
         filteredPhotos.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-        // Return top N photos
-        return NextResponse.json(filteredPhotos.slice(0, limit));
+        // Return page subset
+        return NextResponse.json(filteredPhotos.slice(skip, skip + limit));
 
     } catch (error: any) {
         console.warn("List error:", error);
