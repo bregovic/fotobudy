@@ -1208,7 +1208,9 @@ export default function KioskPage() {
         setTimeout(() => {
             setLastPhoto(null);
             setStatus('idle');
-        }, 2000);
+            // Znovu probudí Live View v zrcadlovce (DCC ho po vyfocení zastaví)
+            setTimeout(restartLiveView, 500);
+        }, 3000); // Zobrazíme náhled na 3 vteřiny (z 2)
     };
 
     const handleEditorSave = async (blob: Blob) => {
