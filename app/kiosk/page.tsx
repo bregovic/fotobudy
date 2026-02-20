@@ -1208,6 +1208,8 @@ export default function KioskPage() {
         setTimeout(() => {
             setLastPhoto(null);
             setStatus('idle');
+            // Úplně obnoví stream URL pro MJPEG, aby prohlížeč neuvízl v mrtvém připojení z pohotového stavu
+            setStreamToken(Date.now());
             // Znovu probudí Live View v zrcadlovce (DCC ho po vyfocení zastaví)
             setTimeout(restartLiveView, 500);
         }, 3000); // Zobrazíme náhled na 3 vteřiny (z 2)
@@ -1294,17 +1296,18 @@ export default function KioskPage() {
     };
 
     const restartLiveView = async () => {
-        // ALWAYS send wake up command to DCC, even if we are on Bridge (5555)
-        // Bridge (5555) does NOT handle ?cmd=LiveView_Show, only DCC (5513/5520) does.
-        const dccPort = autoCmdPort || 5520;
-
         try {
-            fetch(`http://${cameraIp}:${dccPort}/?cmd=LiveView_Show`, { mode: 'no-cors' }).catch(e => { });
-            if (dccPort !== 5513) fetch(`http://${cameraIp}:5513/?cmd=LiveView_Show`, { mode: 'no-cors' }).catch(e => { });
-
-            // If active port is NOT bridge, try sending there too just in case
-            if (activePort && activePort !== 5555) {
-                fetch(`http://${cameraIp}:${activePort}/?cmd=LiveView_Show`, { mode: 'no-cors' }).catch(e => { });
+            if (activePort === 5555) {
+                // Kiosk Bridge mode (Lokální server zajišťuje WakeUp všech portů)
+                fetch(`http://${cameraIp}:5555/wake`).catch(e => { });
+            } else {
+                // Přímé volání DCC
+                const dccPort = autoCmdPort || 5520;
+                fetch(`http://${cameraIp}:${dccPort}/?cmd=LiveView_Show`, { mode: 'no-cors' }).catch(e => { });
+                if (dccPort !== 5513) fetch(`http://${cameraIp}:5513/?cmd=LiveView_Show`, { mode: 'no-cors' }).catch(e => { });
+                if (activePort) {
+                    fetch(`http://${cameraIp}:${activePort}/?cmd=LiveView_Show`, { mode: 'no-cors' }).catch(e => { });
+                }
             }
 
             // 2. Clear failure logs

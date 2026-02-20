@@ -184,6 +184,12 @@ app.get('/cloud-stream-status', (req, res) => {
     res.json({ active: cloudStreamActive });
 });
 
+// --- WAKE UP LIVE VIEW (Called from Frontend when closing review) ---
+app.get('/wake', (req, res) => {
+    sendLiveViewShow();
+    res.json({ success: true });
+});
+
 // --- STATUS ENDPOINT (For Countdown) ---
 app.get('/status', (req, res) => {
     res.json({ countdownTarget, now: Date.now(), dccPort });
@@ -319,7 +325,10 @@ function startBackgroundProcessing() {
                         try {
                             latestFrame = fs.readFileSync(destPath);
                             isReviewing = true;
-                            setTimeout(() => isReviewing = false, 3000);
+                            setTimeout(() => {
+                                isReviewing = false;
+                                sendLiveViewShow(); // Odeslat signál kamere pro probuzení
+                            }, 3000);
                         } catch (e) { }
 
                     } else {
