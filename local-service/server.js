@@ -223,7 +223,16 @@ function triggerShoot(delay) {
 }
 
 app.post('/shoot', (req, res) => {
-    let { delay } = req.body;
+    let { delay, cancel } = req.body;
+
+    // Záchranná brzda od Kiosku na odemknutí serveru z nekonečného stavu
+    if (cancel) {
+        console.log(`[API] 🛑 ZASÁHL ZÁCHRANNÝ PADÁK! Resetuji lock focení.`);
+        isCapturing = false;
+        countdownTarget = 0;
+        return res.json({ success: true, message: 'Server reset to IDLE' });
+    }
+
     console.log(`[API] /shoot request přijat. isCapturing=${isCapturing}`);
     if (!isCapturing) {
         isCapturing = true;

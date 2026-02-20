@@ -1253,12 +1253,14 @@ export default function KioskPage() {
                 if (status === 'capturing' || status === 'countdown') {
                     console.log("Escape Hatch Triggered: Resetting UI to idle");
                     showToast('Chyba: Zrcadlovka neodpověděla včas. Restartuji senzor.');
+                    // Force the backend bridge to unlock itself so it stops broadcasting countdown ticks
+                    fetch(`http://${cameraIp}:5555/shoot`, { method: 'POST', body: JSON.stringify({ delay: 0, cancel: true }), headers: { 'Content-Type': 'application/json' } }).catch(() => { });
                     restartLiveView();
                 }
-            }, 15000 + (timerSeconds * 1000));
+            }, 10000 + (timerSeconds * 1000)); // Snižujeme na 10 vteřin pro rychlejší obzivení
         }
         return () => clearTimeout(timeout);
-    }, [status, timerSeconds]);
+    }, [status, timerSeconds, cameraIp]);
 
     const takePhoto = async (delay = 0) => {
         try {
