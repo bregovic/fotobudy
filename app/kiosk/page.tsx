@@ -1247,10 +1247,10 @@ export default function KioskPage() {
     // Auto-Rescue Escape Hatch
     useEffect(() => {
         let timeout: NodeJS.Timeout;
-        if (status === 'capturing' || status === 'countdown') {
+        if (status === 'processing' || status === 'countdown') {
             timeout = setTimeout(() => {
                 // If it takes more than 15s total to take and process a photo, the camera failed
-                if (status === 'capturing' || status === 'countdown') {
+                if (status === 'processing' || status === 'countdown') {
                     console.log("Escape Hatch Triggered: Resetting UI to idle");
                     showToast('Chyba: Zrcadlovka neodpověděla včas. Restartuji senzor.');
                     // Force the backend bridge to unlock itself so it stops broadcasting countdown ticks
@@ -1517,7 +1517,7 @@ export default function KioskPage() {
                                     </button>
                                 )}
                             </div>
-                            <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-white/10 rounded-full"><X size={24} /></button>
+                            <button onClick={() => { setShowSettings(false); setStreamToken(Date.now()); setTimeout(restartLiveView, 300); }} className="p-2 hover:bg-white/10 rounded-full"><X size={24} /></button>
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-8 bg-slate-900">
@@ -1948,7 +1948,7 @@ export default function KioskPage() {
                     onDelete={bulkDelete}
                     onPrint={printSelected}
                     onEmail={bulkEmail}
-                    onClose={() => setShowGallery(false)}
+                    onClose={() => { setShowGallery(false); setStreamToken(Date.now()); setTimeout(restartLiveView, 300); }}
                     events={events} // Pass events from KioskPage state
                     selectedEventId={galleryEventId}
                     onEventChange={(id: string) => setGalleryEventId(id)}
