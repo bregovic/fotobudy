@@ -40,13 +40,11 @@ let lastFrameTime = 0;
 let isReviewing = false;
 
 function sendLiveViewShow() {
-    // Send LiveView_Show to all candidate ports to make sure DCC activates live view
-    CANDIDATE_PORTS.forEach(port => {
-        http.get(`http://127.0.0.1:${port}/?cmd=LiveView_Show`, (res) => {
-            res.resume();
-        }).on('error', () => { });
-    });
-    console.log('[STARTUP] Odesílám príkaz LiveView_Show do DCC...');
+    // Send LiveView_Show only to the currently active DCC port to avoid flooding and freezing DCC
+    http.get(`http://127.0.0.1:${dccPort}/?cmd=LiveView_Show`, (res) => {
+        res.resume();
+    }).on('error', () => { });
+    console.log(`[STARTUP] Odesílám príkaz LiveView_Show do DCC na port ${dccPort}...`);
 }
 
 const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 1 });
@@ -54,9 +52,8 @@ const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 1 });
 function startCameraPolling() {
     console.log(`[POLLER] Starting smart camera polling (trying ${CANDIDATE_PORTS.join(', ')})...`);
 
-    // Activate live view in DCC at startup (4s delay to let DCC fully initialize)
+    // Activate live view in DCC at startup
     setTimeout(sendLiveViewShow, 4000);
-
 
     const poll = () => {
         if (isReviewing) { setTimeout(poll, 200); return; }
@@ -78,22 +75,20 @@ function startCameraPolling() {
                     latestFrame = buffer;
                     lastFrameTime = Date.now();
                 }
-                // Poll immediately for next frame (max speed)
                 setTimeout(poll, 10);
             });
         });
 
         req.on('error', (e) => {
-            // Switch port on error
             const currentIdx = CANDIDATE_PORTS.indexOf(dccPort);
             const nextIdx = (currentIdx + 1) % CANDIDATE_PORTS.length;
             dccPort = CANDIDATE_PORTS[nextIdx];
             setTimeout(poll, 500);
         });
 
-        // CRITICAL FIX: Timeout hangs — 1500ms is needed for large DSLR JPEG frames
+        // CRITICAL FIX: Timeout hangs
         req.setTimeout(1500, () => {
-            req.destroy(); // This triggers 'error' event above
+            req.destroy();
         });
     };
     poll();
@@ -393,7 +388,8 @@ $newImg.Save('${outputPath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.Ima
 $img.Dispose(); $newImg.Dispose(); $graph.Dispose();
 `;
         const command = `powershell -WindowStyle Hidden -Command "${psScript.replace(/\r?\n/g, ' ')}"`;
-        exec(command, { maxBuffer: 1024 * 1024 * 10, windowsHide: true }, (error) => { if (error) reject(error); else resolve(); });
+        // CRITICAL FIX: Přidal jsem timeout 15000 (15 sekund), aby zaseknutý powershell neshazoval celou lokální aplikaci (isProcessing lock freeze).
+        exec(command, { maxBuffer: 1024 * 1024 * 10, windowsHide: true, timeout: 15000 }, (error) => { if (error) reject(error); else resolve(); });
     });
 }
 
@@ -445,7 +441,7 @@ app.post('/print', async (req, res) => {
 
             try {
                 await new Promise((resolve, reject) => {
-                    https.get(downloadUrl, (dRes) => {
+                    const req = https.get(downloadUrl, (dRes) => {
                         if (dRes.statusCode === 200) {
                             // Pro jistotu vytvoříme složky k souboru
                             fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -456,6 +452,11 @@ app.post('/print', async (req, res) => {
                             reject(new Error(`Failed with status: ${dRes.statusCode}`));
                         }
                     }).on('error', reject);
+
+                    req.setTimeout(15000, () => {
+                        req.destroy();
+                        reject(new Error('Požadavek vypršel - Timeout (15s)'));
+                    });
                 });
                 console.log(`[PRINT] ✅ Úspěšně staženo z cloudu pro tisk!`);
             } catch (err) {

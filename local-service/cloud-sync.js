@@ -73,7 +73,7 @@ $newImg.Save('${outputPath.replace(/\\/g, '\\\\')}', $codecInfo, $encoderParams)
 $img.Dispose(); $newImg.Dispose(); $graph.Dispose();
 `;
         const command = `powershell -WindowStyle Hidden -Command "${psScript.replace(/\r?\n/g, ' ')}"`;
-        exec(command, { maxBuffer: 1024 * 1024 * 10, windowsHide: true }, (error) => {
+        exec(command, { maxBuffer: 1024 * 1024 * 10, windowsHide: true, timeout: 15000 }, (error) => {
             if (error) reject(error);
             else resolve();
         });
@@ -118,6 +118,12 @@ function uploadToCloud(filePath, filename) {
                     reject(new Error('Invalid response'));
                 }
             });
+        });
+
+        // Přidání bezpodmínečného timeoutu k nahrávání
+        req.setTimeout(20000, () => {
+            req.destroy();
+            reject(new Error('Upload timeout'));
         });
 
         req.on('error', reject);
