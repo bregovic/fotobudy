@@ -51,6 +51,16 @@ export async function POST(request: Request) {
 
         // --- 🏠 LOCAL DELETE (OFFLINE) ---
         const photosRoot = path.join(process.cwd(), 'public', 'photos');
+        const syncMapPath = path.join(process.cwd(), 'sync_map.json');
+        let syncMap: any = null;
+
+        // Načíst sync_map.json, aby se dal smazat záznam z lokální DB
+        if (fs.existsSync(syncMapPath)) {
+            try {
+                syncMap = JSON.parse(fs.readFileSync(syncMapPath, 'utf8'));
+            } catch (e) { }
+        }
+
         let deletedCount = 0;
 
         for (const relativeId of idsToDelete) {
@@ -80,19 +90,32 @@ export async function POST(request: Request) {
             }
 
             // 2. Smazat cloud (komprimovanou) verzi, pokud existuje
-            // Parse paths to construct /cloud/ version
             const dir = path.dirname(relativeId);
             const base = path.basename(relativeId);
             const cloudPath = path.join(photosRoot, dir, 'cloud', base);
             tryDelete(cloudPath);
 
-            // 3. Smazat starší "web_" verzi (pro zpětnou kompatibilitu s dřívějším chováním)
+            // 3. Smazat starší "web_" verzi
             const webPath = path.join(photosRoot, dir, 'web_' + base);
             tryDelete(webPath);
 
-            // 4. Smazat "edited_" verzi (upravenou z Kiosku)
+            // 4. Smazat "edited_" verzi
             const editedPath = path.join(photosRoot, dir, 'edited_' + base);
             tryDelete(editedPath);
+
+            // 5. Odstranit klíč z lokální sync_map.json, aby si PC nepamatovalo "Smazanou" fotku jako "Nyní Nahranou"
+            if (syncMap && syncMap.synced) {
+                const cloudRelPath = (dir && dir !== '.') ? `${dir}/cloud/${base}` : `cloud/${base}`;
+                if (syncMap.synced[cloudRelPath]) {
+                    delete syncMap.synced[cloudRelPath];
+                    console.log(`      Smazáno ze sync_map.json: ${cloudRelPath}`);
+                }
+            }
+        }
+
+        // Uložit upravenou sync mapu zpět na disk
+        if (syncMap) {
+            fs.writeFileSync(syncMapPath, JSON.stringify(syncMap, null, 2));
         }
 
         return NextResponse.json({ success: true, count: deletedCount });
