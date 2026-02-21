@@ -1239,7 +1239,10 @@ export default function KioskPage() {
     };
     // Unified Countdown: Trigger server with delay
     const startCountdown = () => {
-        if (processingRef.current || status !== 'idle') return;
+        if (processingRef.current || status !== 'idle') {
+            showToast(`⏳ Připravuji (${status})...`); // Diagnostic message instead of silent ignore
+            return;
+        }
         setStatus('countdown'); // immediately lock the UI from double clicks
         takePhoto(timerSeconds * 1000);
     };
@@ -1874,7 +1877,7 @@ export default function KioskPage() {
                         {status === 'review' ? (
                             <button className="w-16 h-16 md:w-24 md:h-24 rounded-full border-4 border-red-500 flex items-center justify-center bg-red-500/20 hover:scale-105 transition-all shadow-red-900/50 shadow-lg" onClick={() => { setStatus('idle'); setLastPhoto(null); setStreamToken(Date.now()); setTimeout(restartLiveView, 100); }}><RefreshCw size={30} className="md:w-10 md:h-10" color="#fff" /></button>
                         ) : (
-                            <button className="w-20 h-20 md:w-28 md:h-28 rounded-full border-[6px] border-white flex items-center justify-center bg-white/10 hover:bg-white/30 transition-all active:scale-95 shadow-lg shadow-white/10" onClick={startCountdown} disabled={status !== 'idle'}><div className="w-14 h-14 md:w-20 md:h-20 bg-white rounded-full shadow-inner"></div></button>
+                            <button className={`w-20 h-20 md:w-28 md:h-28 rounded-full border-[6px] border-white flex items-center justify-center bg-white/10 hover:bg-white/30 transition-all shadow-lg shadow-white/10 ${status !== 'idle' ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`} onClick={startCountdown}><div className="w-14 h-14 md:w-20 md:h-20 bg-white rounded-full shadow-inner"></div></button>
                         )}
                     </div>
                     <div className="flex gap-3 md:gap-6 px-2 md:px-4 border-l border-white/10 pl-2 md:pl-6">
